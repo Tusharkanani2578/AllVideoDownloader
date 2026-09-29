@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Download arrow into a tray. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 L60,30 L60,48 L70,48 L54,66 L38,48 L48,48 L48,30 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,70 L74,70 L74,76 L34,76 Z" />
+</vector>

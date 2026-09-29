@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">All Video Downloader</string>
+    <string name="app_tagline">Paste a link, save the video</string>
+    <string name="clipboard_detected">Link found on your clipboard</string>
+    <string name="quality_count">%1$d qualities available</string>
+
+    <string name="label_paste_url">Video URL</string>
+    <string name="placeholder_url">https://www.instagram.com/reel/…</string>
+    <string name="label_select_quality">Select quality</string>
+    <string name="label_downloading">Downloading</string>
+    <string name="label_preparing">Preparing…</string>
+    <string name="label_download_complete">Download complete</string>
+    <string name="label_saved_to_gallery">Saved to your gallery as %1$s</string>
+
+    <string name="action_paste">Paste</string>
+    <string name="action_fetch">Fetch video</string>
+    <string name="action_download">Download</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_download_another">Download another</string>
+    <string name="action_use">Use</string>
+    <string name="action_open">Open</string>
+    <string name="action_share">Share</string>
+
+    <string name="empty_title">Paste a video link to begin</string>
+    <string name="empty_subtitle">Copy a link, then come back — it will be picked up automatically.</string>
+
+    <string name="notification_downloading">Downloading video</string>
+    <string name="notification_channel_downloads">Downloads</string>
+</resources>
