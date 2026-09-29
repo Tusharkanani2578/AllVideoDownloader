@@ -28,12 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -66,6 +61,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -280,7 +276,7 @@ private fun DownloadButton(onDownload: () -> Unit) {
         shape = CardShape,
         modifier = Modifier.fillMaxWidth().height(54.dp),
     ) {
-        Icon(Icons.Default.Download, contentDescription = null)
+        Icon(painterResource(R.drawable.ic_download), contentDescription = null)
         Spacer(Modifier.size(10.dp))
         Text(
             text = stringResource(R.string.action_download),
@@ -304,7 +300,7 @@ private fun ClipboardSuggestionCard(suggestion: String, onUse: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Outlined.ContentCopy,
+                painter = painterResource(R.drawable.ic_content_copy),
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -360,7 +356,7 @@ private fun UrlInputCard(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f).height(48.dp),
                 ) {
-                    Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(painterResource(R.drawable.ic_content_paste), contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
                     Text(stringResource(R.string.action_paste))
                 }
@@ -642,7 +638,7 @@ private fun CompletedContent(result: DownloadProgress.Completed, onDismiss: () -
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f),
             ) {
-                Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(painterResource(R.drawable.ic_open_in_new), contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.action_open))
             }
@@ -685,7 +681,7 @@ private fun ErrorCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Icon(
-                    imageVector = Icons.Default.ErrorOutline,
+                    painter = painterResource(R.drawable.ic_error_outline),
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                 )
@@ -732,7 +728,7 @@ private fun EmptyState() {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Default.Download,
+                painter = painterResource(R.drawable.ic_download),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.size(30.dp),
