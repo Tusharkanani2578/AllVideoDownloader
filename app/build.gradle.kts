@@ -10,7 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.tushar.videodownloader"
-        minSdk = 24
+        // 29 is where scoped storage arrives. Below it the app would need a runtime
+        // storage permission and a legacy write path for a shrinking share of devices;
+        // MediaStore alone is the cleaner contract.
+        minSdk = 29
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"

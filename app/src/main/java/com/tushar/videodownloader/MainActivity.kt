@@ -36,7 +36,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         requestNotificationPermissionIfNeeded()
-        handleSharedLink(intent)
+
+        // Only on a genuine launch. The ViewModel outlives a configuration change while
+        // getIntent() still returns the original share, so replaying it on every
+        // recreation would wipe a resolved result the moment the user rotated.
+        if (savedInstanceState == null) handleSharedLink(intent)
 
         setContent {
             AllVideoDownloaderTheme {
@@ -69,12 +73,18 @@ class MainActivity : ComponentActivity() {
     /** Handles "Share to this app" while it is already running. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Without this, getIntent() keeps returning the original launch intent, so a
+        // later recreation would replay that one instead of the link just shared.
+        setIntent(intent)
         handleSharedLink(intent)
     }
 
     private fun handleSharedLink(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
-        intent.getStringExtra(Intent.EXTRA_TEXT)?.let(viewModel::onUrlChanged)
+        val shared = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        // Consumed, so no other path can apply the same link twice.
+        intent.removeExtra(Intent.EXTRA_TEXT)
+        viewModel.onUrlChanged(shared)
     }
 
     /** Returns the clipboard's plain text, or null when it holds nothing usable. */

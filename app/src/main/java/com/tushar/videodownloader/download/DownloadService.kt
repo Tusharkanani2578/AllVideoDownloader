@@ -57,6 +57,10 @@ class DownloadService : Service() {
     }
 
     private fun startDownload() {
+        // onStartCommand is a re-entrant entry point; two coroutines would open two
+        // append streams on the same .part file and interleave their writes.
+        if (downloadJob?.isActive == true) return
+
         val media = pendingMedia
         val quality = pendingQuality
         if (media == null || quality == null) {

@@ -11,6 +11,7 @@ import com.tushar.videodownloader.download.DownloadProgress
 import com.tushar.videodownloader.download.DownloadService
 import com.tushar.videodownloader.resolver.ResolveException
 import com.tushar.videodownloader.resolver.VideoQuality
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val registry = ServiceLocator.resolverRegistry
     private val networkMonitor = ServiceLocator.networkMonitor(application)
+
+    /** The in-flight resolve, so a newer one can cancel it. */
+    private var resolveJob: Job? = null
 
     init {
         observeDownloadProgress()
@@ -67,6 +71,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // Editing clears the previous result entirely — including a finished download.
         // Leaving it would strand a "saved as …" card, with its Open and Share actions
         // still pointing at the previous video, above a freshly pasted link.
+        resolveJob?.cancel()
         clearFinishedDownload()
         _uiState.update {
             it.copy(
@@ -111,7 +116,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(stage = HomeUiState.Stage.Fetching, error = null, download = null)
         }
 
-        viewModelScope.launch {
+        // A second fetch while one is in flight would otherwise race: the older request
+        // can land last and overwrite the newer result, leaving the user looking at one
+        // link and downloading another.
+        resolveJob?.cancel()
+        resolveJob = viewModelScope.launch {
             registry.resolve(url)
                 .onSuccess { media ->
                     _uiState.update {

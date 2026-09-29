@@ -16,7 +16,8 @@ once first, then `./gradlew assembleDebug`.
 
 Unit tests: `./gradlew test`
 
-- **minSdk** 24, **targetSdk** 35
+- **minSdk** 29, **targetSdk** 35 — 29 is where scoped storage begins, so MediaStore is
+  the only write path and no runtime storage permission is needed
 - **Language** Kotlin, **UI** Jetpack Compose + Material 3
 
 ---

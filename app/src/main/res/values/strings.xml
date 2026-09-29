@@ -3,7 +3,10 @@
     <string name="app_name">All Video Downloader</string>
     <string name="app_tagline">Paste a link, save the video</string>
     <string name="clipboard_detected">Link found on your clipboard</string>
-    <string name="quality_count">%1$d qualities available</string>
+    <plurals name="quality_count">
+        <item quantity="one">%1$d quality available</item>
+        <item quantity="other">%1$d qualities available</item>
+    </plurals>
 
     <string name="label_paste_url">Video URL</string>
     <string name="placeholder_url">https://www.instagram.com/reel/…</string>

@@ -1,6 +1,7 @@
 package com.tushar.videodownloader.download
 
 import com.tushar.videodownloader.core.DownloadError
+import com.tushar.videodownloader.resolver.MediaKind
 
 sealed interface DownloadProgress {
 
@@ -20,7 +21,12 @@ sealed interface DownloadProgress {
             ?.let { ((bytesDownloaded * 100) / it).toInt().coerceIn(0, 100) }
     }
 
-    data class Completed(val fileName: String, val galleryUri: String) : DownloadProgress
+    /** @param kind carried through so Open and Share can type their intent correctly. */
+    data class Completed(
+        val fileName: String,
+        val galleryUri: String,
+        val kind: MediaKind,
+    ) : DownloadProgress
 
     data class Failed(val error: DownloadError) : DownloadProgress
 }

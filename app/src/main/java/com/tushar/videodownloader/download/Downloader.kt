@@ -61,7 +61,7 @@ class Downloader(
         } catch (e: InterruptedIOException) {
             emit(DownloadProgress.Failed(DownloadError.Interrupted(0)))
         } catch (e: IOException) {
-            emit(DownloadProgress.Failed(e.toDownloadError()))
+            emit(DownloadProgress.Failed(e.toDownloadError(quality.sizeBytes)))
         } catch (e: Exception) {
             emit(DownloadProgress.Failed(DownloadError.Unexpected(e)))
         }
@@ -120,7 +120,7 @@ class Downloader(
             }
 
             val uri = mediaStoreSaver.publish(tempFile, fileName, media.kind)
-            emit(DownloadProgress.Completed(fileName, uri.toString()))
+            emit(DownloadProgress.Completed(fileName, uri.toString(), media.kind))
         }
     }
 
@@ -186,10 +186,18 @@ class Downloader(
         return written
     }
 
-    /** Distinguishes a disk that filled mid-write from a generic connection drop. */
-    private fun IOException.toDownloadError(): DownloadError =
+    /**
+     * Distinguishes a disk that filled mid-write from a generic connection drop.
+     *
+     * @param requiredBytes the size being written, so the storage message can name it
+     *   rather than reporting "needs 0 B".
+     */
+    private fun IOException.toDownloadError(requiredBytes: Long?): DownloadError =
         if (message?.contains("ENOSPC", ignoreCase = true) == true) {
-            DownloadError.InsufficientStorage(0L, mediaStoreSaver.availableBytes())
+            DownloadError.InsufficientStorage(
+                requiredBytes = requiredBytes ?: 0L,
+                availableBytes = mediaStoreSaver.availableBytes(),
+            )
         } else {
             DownloadError.Interrupted(0)
         }

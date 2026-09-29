@@ -7,15 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
-    <!--
-        Legacy storage permission is only required up to Android 9 (API 28).
-        From Android 10 onwards the app writes through MediaStore, which needs
-        no permission for media the app itself creates.
-    -->
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
-
     <application
         android:name=".VideoDownloaderApp"
         android:allowBackup="true"

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +83,15 @@ import com.tushar.videodownloader.resolver.ResolvedMedia
 import com.tushar.videodownloader.resolver.VideoQuality
 
 private val CardShape = RoundedCornerShape(20.dp)
+
+/**
+ * Widest the content is allowed to get.
+ *
+ * On a phone in portrait this changes nothing. In landscape, on a tablet or in a
+ * split-screen window it stops a single column of text and controls from stretching the
+ * full width, which is both hard to read and looks unfinished.
+ */
+private val ContentMaxWidth = 560.dp
 
 /**
  * The single screen of the app: paste a link, pick a quality, download.
@@ -149,10 +160,16 @@ fun HomeScreen(
             )
         },
     ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
+        ) {
         Column(
+            // widthIn before fillMaxWidth: the cap has to narrow the incoming
+            // constraint before fillMaxWidth expands into it, or it has no effect.
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+                .widthIn(max = ContentMaxWidth)
+                .fillMaxWidth()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -202,6 +219,7 @@ fun HomeScreen(
                 EmptyState()
             }
         }
+        }
     }
 }
 
@@ -236,13 +254,20 @@ private fun ActionBar(
             shadowElevation = 8.dp,
             color = MaterialTheme.colorScheme.surface,
         ) {
-            Box(Modifier.navigationBarsPadding().padding(16.dp)) {
+            // Matches the content column so the action does not stretch wider than
+            // what it acts on when the window is wide.
+            Box(
+                modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+                contentAlignment = Alignment.Center,
+            ) {
+            Box(Modifier.widthIn(max = ContentMaxWidth).fillMaxWidth().padding(16.dp)) {
                 when (download) {
                     is DownloadProgress.Preparing -> ProgressContent(null, onCancel)
                     is DownloadProgress.Running -> ProgressContent(download, onCancel)
                     is DownloadProgress.Completed -> CompletedContent(download, onDismissResult)
                     else -> DownloadButton(onDownload)
                 }
+            }
             }
         }
     }
@@ -383,7 +408,11 @@ private fun MediaCard(
                 AssistChip(onClick = {}, label = { Text(media.platform.displayName) })
                 Spacer(Modifier.size(8.dp))
                 Text(
-                    text = stringResource(R.string.quality_count, media.qualities.size),
+                    text = pluralStringResource(
+                        R.plurals.quality_count,
+                        media.qualities.size,
+                        media.qualities.size,
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -609,7 +638,7 @@ private fun CompletedContent(result: DownloadProgress.Completed, onDismiss: () -
         // A download is only finished once the user can actually watch it.
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
-                onClick = { MediaActions.openInGallery(context, result.galleryUri) },
+                onClick = { MediaActions.open(context, result.galleryUri, result.kind) },
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f),
             ) {
@@ -618,7 +647,7 @@ private fun CompletedContent(result: DownloadProgress.Completed, onDismiss: () -
                 Text(stringResource(R.string.action_open))
             }
             FilledTonalButton(
-                onClick = { MediaActions.share(context, result.galleryUri) },
+                onClick = { MediaActions.share(context, result.galleryUri, result.kind) },
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f),
             ) {

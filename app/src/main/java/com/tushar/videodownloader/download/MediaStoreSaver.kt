@@ -3,7 +3,6 @@ package com.tushar.videodownloader.download
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
@@ -11,10 +10,9 @@ import com.tushar.videodownloader.resolver.MediaKind
 import java.io.File
 
 /**
- * Publishes finished downloads into the gallery. Android 10+ writes through
- * MediaStore (no storage permission needed for app-created media); Android 9 and
- * below falls back to a direct write, which is why the manifest declares
- * WRITE_EXTERNAL_STORAGE with maxSdkVersion 28.
+ * Publishes finished downloads into the gallery through MediaStore, which needs no
+ * storage permission for media the app itself creates. This is why `minSdk` is 29:
+ * below it the app would need a runtime storage permission and a second write path.
  *
  * Video and images live in separate MediaStore collections and separate public
  * directories, so every operation is routed by [MediaKind].
@@ -56,14 +54,7 @@ class MediaStoreSaver(private val context: Context) {
         return null
     }
 
-    fun publish(tempFile: File, fileName: String, kind: MediaKind): Uri =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            publishScoped(tempFile, fileName, kind)
-        } else {
-            publishLegacy(tempFile, fileName, kind)
-        }
-
-    private fun publishScoped(tempFile: File, fileName: String, kind: MediaKind): Uri {
+    fun publish(tempFile: File, fileName: String, kind: MediaKind): Uri {
         // IS_PENDING keeps the half-written file invisible to other apps until done.
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
@@ -93,26 +84,6 @@ class MediaStoreSaver(private val context: Context) {
 
         tempFile.delete()
         return uri
-    }
-
-    private fun publishLegacy(tempFile: File, fileName: String, kind: MediaKind): Uri {
-        val dir = File(
-            Environment.getExternalStoragePublicDirectory(kind.publicDirectory()),
-            FOLDER_NAME,
-        ).apply { mkdirs() }
-
-        val target = File(dir, fileName)
-        tempFile.copyTo(target, overwrite = true)
-        tempFile.delete()
-
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, kind.mimeType)
-            @Suppress("DEPRECATION")
-            put(MediaStore.MediaColumns.DATA, target.absolutePath)
-        }
-        return context.contentResolver.insert(kind.collectionUri(), values)
-            ?: Uri.fromFile(target)
     }
 
     private fun MediaKind.collectionUri(): Uri = when (this) {
