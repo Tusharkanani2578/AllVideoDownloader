@@ -7,7 +7,6 @@ import com.tushar.videodownloader.network.HttpClientProvider
 import com.tushar.videodownloader.network.NetworkMonitor
 import com.tushar.videodownloader.resolver.DirectUrlResolver
 import com.tushar.videodownloader.resolver.FacebookResolver
-import com.tushar.videodownloader.resolver.HlsResolver
 import com.tushar.videodownloader.resolver.InstagramResolver
 import com.tushar.videodownloader.resolver.ResolverRegistry
 import java.io.File
@@ -27,7 +26,6 @@ object ServiceLocator {
             listOf(
                 InstagramResolver(httpClientProvider),
                 FacebookResolver(httpClientProvider),
-                HlsResolver(httpClientProvider),
                 DirectUrlResolver(httpClientProvider),
             )
         )

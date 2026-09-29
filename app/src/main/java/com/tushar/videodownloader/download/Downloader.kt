@@ -3,7 +3,6 @@ package com.tushar.videodownloader.download
 import com.tushar.videodownloader.core.DownloadError
 import com.tushar.videodownloader.network.HttpClientProvider
 import com.tushar.videodownloader.network.NetworkMonitor
-import com.tushar.videodownloader.resolver.HlsPlaylistParser
 import com.tushar.videodownloader.resolver.ResolvedMedia
 import com.tushar.videodownloader.resolver.VideoQuality
 import kotlinx.coroutines.CancellationException
@@ -14,7 +13,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
@@ -24,9 +22,10 @@ import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 
 /**
- * Streams a video to disk and publishes it to the gallery. Progressive files download
- * as one ranged request (the partial file on disk is the resume point); HLS renditions
- * are assembled from segments, with progress tracked by segment count.
+ * Streams a video to disk and publishes it to the gallery.
+ *
+ * The transfer is one ranged request, which is what makes resuming simple: the partial
+ * file left on disk is itself the resume point.
  */
 class Downloader(
     private val httpClient: HttpClientProvider,
@@ -53,7 +52,7 @@ class Downloader(
         }
 
         try {
-            if (quality.isHls) downloadHls(media, quality) else downloadProgressive(media, quality)
+            transfer(media, quality)
         } catch (e: CancellationException) {
             throw e
         } catch (e: SocketTimeoutException) {
@@ -67,9 +66,7 @@ class Downloader(
         }
     }.flowOn(Dispatchers.IO)
 
-    // ---------------------------------------------------------------- progressive
-
-    private suspend fun FlowCollector<DownloadProgress>.downloadProgressive(
+    private suspend fun FlowCollector<DownloadProgress>.transfer(
         media: ResolvedMedia,
         quality: VideoQuality,
     ) {
@@ -121,107 +118,10 @@ class Downloader(
                 return
             }
 
-            publish(tempFile, fileName, "video/mp4")
+            val uri = mediaStoreSaver.publish(tempFile, fileName)
+            emit(DownloadProgress.Completed(fileName, uri.toString()))
         }
     }
-
-    // ----------------------------------------------------------------------- HLS
-
-    private suspend fun FlowCollector<DownloadProgress>.downloadHls(
-        media: ResolvedMedia,
-        quality: VideoQuality,
-    ) {
-        val playlistUrl = quality.url.toHttpUrlOrNull()
-        if (playlistUrl == null) {
-            emit(DownloadProgress.Failed(DownloadError.InvalidUrl))
-            return
-        }
-
-        val playlistBody = fetchText(quality.url)
-        if (playlistBody == null) {
-            emit(DownloadProgress.Failed(DownloadError.NoMediaFound))
-            return
-        }
-
-        val playlist = HlsPlaylistParser.parseMedia(playlistBody)
-        if (playlist.segmentUris.isEmpty()) {
-            emit(DownloadProgress.Failed(DownloadError.NoMediaFound))
-            return
-        }
-        // Concatenating encrypted segments yields a file that won't play; refuse.
-        if (playlist.isEncrypted) {
-            emit(DownloadProgress.Failed(DownloadError.EncryptedStream))
-            return
-        }
-
-        // fMP4 concatenates into .mp4, MPEG-TS into .ts — the wrong extension leaves
-        // the gallery with an unopenable file.
-        val extension = if (playlist.isFragmentedMp4) "mp4" else "ts"
-        val mimeType = if (playlist.isFragmentedMp4) "video/mp4" else "video/mp2t"
-
-        val fileName = FileNaming.buildFileName(media, quality, extension)
-        if (rejectIfAlreadySaved(fileName)) return
-
-        // Segments never declare a combined length; estimate from bitrate x duration.
-        if (rejectIfNoRoom(estimateSize(quality, playlist.totalDurationSeconds))) return
-
-        // HLS restarts rather than resumes: a half-written concatenation has no safe
-        // continuation point.
-        val tempFile = File(tempDir, "$fileName.part")
-        tempFile.delete()
-
-        val uris = listOfNotNull(playlist.initSegmentUri) + playlist.segmentUris
-        var written = 0L
-        var lastEmitAt = 0L
-
-        FileOutputStream(tempFile, false).use { output ->
-            uris.forEachIndexed { index, segmentUri ->
-                currentCoroutineContext().ensureActive()
-
-                val segmentUrl = HlsPlaylistParser.resolveUri(playlistUrl, segmentUri)
-                if (segmentUrl == null) {
-                    emit(DownloadProgress.Failed(DownloadError.NoMediaFound))
-                    return
-                }
-
-                val request = Request.Builder()
-                    .url(segmentUrl)
-                    .header("User-Agent", HttpClientProvider.USER_AGENT)
-                    .get()
-                    .build()
-
-                httpClient.client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        emit(DownloadProgress.Failed(DownloadError.ServerError(response.code)))
-                        return
-                    }
-                    val body = response.body ?: run {
-                        emit(DownloadProgress.Failed(DownloadError.NoMediaFound))
-                        return
-                    }
-                    written += body.byteStream().copyTo(output, BUFFER_SIZE)
-                }
-
-                val now = System.currentTimeMillis()
-                if (now - lastEmitAt >= PROGRESS_INTERVAL_MS || index == uris.lastIndex) {
-                    emit(
-                        DownloadProgress.Running(
-                            bytesDownloaded = written,
-                            totalBytes = null,
-                            bytesPerSecond = 0,
-                            segmentPercent = ((index + 1) * 100) / uris.size,
-                        )
-                    )
-                    lastEmitAt = now
-                }
-            }
-            output.flush()
-        }
-
-        publish(tempFile, fileName, mimeType)
-    }
-
-    // ------------------------------------------------------------------- helpers
 
     private suspend fun FlowCollector<DownloadProgress>.rejectIfAlreadySaved(
         fileName: String,
@@ -244,15 +144,6 @@ class Downloader(
             )
         )
         return true
-    }
-
-    private suspend fun FlowCollector<DownloadProgress>.publish(
-        tempFile: File,
-        fileName: String,
-        mimeType: String,
-    ) {
-        val uri = mediaStoreSaver.publish(tempFile, fileName, mimeType)
-        emit(DownloadProgress.Completed(fileName, uri.toString()))
     }
 
     private suspend fun FlowCollector<DownloadProgress>.copyWithProgress(
@@ -293,23 +184,6 @@ class Downloader(
         return written
     }
 
-    private fun fetchText(url: String): String? {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", HttpClientProvider.USER_AGENT)
-            .get()
-            .build()
-
-        return httpClient.client.newCall(request).execute().use { response ->
-            if (response.isSuccessful) response.body?.string() else null
-        }
-    }
-
-    private fun estimateSize(quality: VideoQuality, durationSeconds: Double): Long? {
-        if (quality.bandwidthBitsPerSecond <= 0 || durationSeconds <= 0) return null
-        return (quality.bandwidthBitsPerSecond / 8.0 * durationSeconds).toLong()
-    }
-
     /** Distinguishes a disk that filled mid-write from a generic connection drop. */
     private fun IOException.toDownloadError(): DownloadError =
         if (message?.contains("ENOSPC", ignoreCase = true) == true) {
@@ -319,8 +193,6 @@ class Downloader(
         }
 
     fun discardPartial(media: ResolvedMedia, quality: VideoQuality) {
-        listOf("mp4", "ts").forEach { extension ->
-            File(tempDir, "${FileNaming.buildFileName(media, quality, extension)}.part").delete()
-        }
+        File(tempDir, "${FileNaming.buildFileName(media, quality)}.part").delete()
     }
 }

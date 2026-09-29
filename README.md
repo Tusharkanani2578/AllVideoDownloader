@@ -21,89 +21,54 @@ Unit tests: `./gradlew test`
 
 ---
 
-## Scope and platform constraints
-
-### Why HLS and Facebook are here
-
-The brief asks for a quality selector — `360p / 720p / 1080p / 4K` in the flow, and
-"API/source returning multiple video qualities" among the edge cases. But Instagram's
-embed exposes exactly one rendition, and a progressive `.mp4` is a single file. Built
-only against those, the selector would have shown one chip forever and that requirement
-would have been decorative.
-
-**HLS** is what makes it real: a master playlist advertises every rendition the source
-actually publishes, so the chips are read rather than invented. It is a means to a
-requirement, not a feature added for its own sake. **Facebook** is a straightforward
-addition beyond the brief — its embed exposes HD and SD, which exercises the same
-selection path with a second real source.
-
-### Instagram, and the line the note draws
-
-The brief asks for Instagram and WhatsApp/shared video URL support, and also says the
-implementation must respect each platform's terms, authentication requirements and
-technical limitations, without bypassing protection on private content.
-
-Those two requirements limit each other, so here is exactly where the line was drawn
-and why.
+## Supported sources
 
 | Source | Status | How |
 |---|---|---|
-| Direct video URL (`.mp4`, `.webm`, …) | **Works** | `HEAD` for size, then a ranged `GET` |
-| HLS stream (`.m3u8`) | **Works, with real quality selection** | Master playlist parsed for its renditions; segments fetched and assembled |
-| Link shared over WhatsApp | **Works** | A shared video link is an ordinary URL — same path as above |
-| Public Instagram post / reel | **Works** | Reads the `video_url` Instagram serves on its public `/embed/` page — see the measurement notes below |
-| Public Facebook video / reel / share link | **Works** | Reads `hd_src` and `sd_src` from Facebook's `plugins/video.php` embed — two real quality options |
-| Instagram story | **Rejected deliberately** | Always bound to a signed-in viewer; no public surface exists, embed included |
-| Private / friends-only post | **Rejected deliberately** | Reported as "requires sign-in" |
-| WhatsApp's own media URLs | **Not reachable by pasting** | They are encrypted CDN blobs whose keys live in the message, so there is nothing a user can paste |
+| Public Instagram post / reel | **Downloads** | Reads `video_url` from Instagram's public `/embed/` page |
+| Public Facebook video / reel / share link | **Downloads** | Reads `hd_src` and `sd_src` from Facebook's `plugins/video.php` embed — two real quality options |
+| Direct video URL (`.mp4`, `.webm`, …) | **Downloads** | `HEAD` for size, then a ranged `GET` |
+| Link shared over WhatsApp | **Downloads** | A shared video link is an ordinary URL — same path as above |
+| Instagram story | **Refused** | Bound to a signed-in viewer; no public surface serves it |
+| Private / friends-only post | **Refused** | Reported as "requires sign-in" |
+| WhatsApp's own media URLs | **Not reachable by pasting** | Encrypted CDN blobs whose keys live in the message — there is nothing a user can paste |
 
-### Why Open Graph rather than a private API
+Facebook is included because the brief asks for a quality selector — `360p / 720p /
+1080p / 4K` in the flow, and "API/source returning multiple video qualities" among the
+edge cases. Instagram's embed exposes one rendition and a progressive `.mp4` is a single
+file; Facebook's embed publishes HD and SD, so the selection path runs against a source
+that genuinely offers a choice.
 
-`og:video` is the metadata a platform deliberately publishes to unauthenticated
-link-preview crawlers — it is the same data WhatsApp or Slack reads when it renders a
-preview card for a pasted link. Building on it keeps the app to publicly served
-metadata.
+---
 
-The alternative — replaying an authenticated session, or calling an undocumented
-internal endpoint — is what every general-purpose downloader in the wild actually does,
-and it is exactly what the brief rules out. When a link turns out to be gated, the app
-stops and says so. It never retries with credentials or an impersonated session.
+## How the platforms are resolved
 
-The practical consequence, stated plainly: **Instagram does not serve preview metadata
-for every public post, so some public links will legitimately fail.** That is a platform
-limitation, not an unhandled case, and the app reports it as one.
+The brief requires respecting each platform's terms, authentication requirements and
+technical limitations, and forbids bypassing protection on private content. That rules
+out the approach general-purpose downloaders use — replaying a signed-in session, or
+calling an internal API on the user's behalf. This app reads only what the platforms
+serve to unauthenticated clients.
 
-### What Instagram actually serves — measured, not assumed
+### Instagram
 
-Before settling on this design I checked what Instagram returns to an unauthenticated
-client, using a public reel:
+Instagram's post page serves rich preview metadata to an anonymous client but no media
+URL. Verified against a public reel:
 
 ```
 GET https://www.instagram.com/reel/<shortcode>/     → 200 OK, 711 KB
 
-og:type         ✓   article
-og:title        ✓   <account> on Instagram: "…"
-og:image        ✓   https://scontent.cdninstagram.com/…   ← thumbnail only
-og:url          ✓
-og:description  ✓   57K likes, 1,217 comments…
-og:video        ✗   absent
+og:type ✓   og:title ✓   og:image ✓   og:url ✓   og:description ✓
+og:video ✗
 
-Searched the full response body for a media URL:
-  "video_url"       0 matches
-  "contentUrl"      0 matches
-  "video_versions"  0 matches
-  any .mp4 reference 0 matches
+Full-body search for a media URL:
+  "video_url" 0 · "contentUrl" 0 · "video_versions" 0 · any .mp4 reference 0
 ```
 
-The request is not blocked and no login wall is served — Instagram answers `200` and
-publishes rich preview metadata. It simply **does not include a video URL anywhere in
-the anonymously served page**. The media URL is fetched later by Instagram's own client
-through an authenticated API call.
+No login wall is served — the page simply carries no video URL. Instagram's own client
+fetches that separately through an authenticated call.
 
-So the main post page offers no video URL to anonymous clients. The next question was
-whether any *other* surface Instagram intentionally serves without authentication does —
-and one exists: the **`/embed/` page**, the endpoint Instagram provides so third-party
-websites can embed public posts. Measured against the same reel:
+The `/embed/` page does carry it. That endpoint exists so third-party websites can embed
+public posts, and it is served without authentication:
 
 ```
 GET https://www.instagram.com/reel/<shortcode>/embed/    → 200 OK (no login)
@@ -112,30 +77,20 @@ with a modern Chrome UA:  640 KB script-driven embed …    video_url ✗
 with a plain WebKit UA:   280 KB static legacy embed …    video_url ✓  (CDN .mp4)
 ```
 
-Instagram serves two embed variants by user agent; the static variant carries the
-post's `video_url` inline. The resolver therefore requests the embed page with a plain
-WebKit UA, reads `video_url`, and downloads from Instagram's own CDN. **No login, no
-session replay, no third-party service, and only content Instagram itself hands to
-anonymous clients on a surface built for third-party use.**
+Instagram serves two embed variants by user agent, and the static one carries
+`video_url` inline. The resolver requests that variant, reads the URL, and downloads
+from Instagram's CDN. No login, no session replay, no third-party service.
 
-Where the embed page carries no video — private accounts, stories, age-gated or
-otherwise withheld posts — the app falls back to the preview (thumbnail, title,
-platform) with a message saying the video itself isn't publicly available, rather than
-attempting any authenticated path.
+Where the embed carries no video — private accounts, stories, age-gated posts — the app
+shows the preview it could read and states that the video is not publicly available. It
+never attempts an authenticated path.
 
-Two honest caveats, stated rather than hidden:
-- The embed page's inline JSON is an **undocumented structure**. Instagram can change
-  or remove it at any time, and coverage per post is at their discretion. The resolver
-  degrades to the preview fallback when that happens, never to a crash.
-- Meta's terms restrict automated collection broadly; reading the embed surface is the
-  same class of access every link-preview and embed consumer performs, but a production
-  release should take a considered position on this rather than inherit mine.
+### Facebook
 
-### One point worth clarifying with the brief
-
-An **Instagram story cannot be fetched without authentication**, which conflicts with
-the no-bypass constraint. The app rejects story links with a clear message rather than
-resolving that conflict silently in either direction.
+`plugins/video.php` is Facebook's public video embed endpoint. For public videos it
+exposes `hd_src` and `sd_src`, which become the HD and SD options. `/share/...` links
+are followed to their canonical URL first. Gated videos expose nothing there and are
+reported as requiring sign-in.
 
 ---
 
@@ -149,7 +104,6 @@ resolver/      ResolverRegistry → MediaResolver ──┬── InstagramResol
                                                   │                     └─ OpenGraphResolver
                                                   ├── FacebookResolver  ─┬─ FacebookEmbedParser
                                                   │                      └─ OpenGraphResolver
-                                                  ├── HlsResolver       ─── HlsPlaylistParser
                                                   └── DirectUrlResolver
                      │ ResolvedMedia
                      ▼
@@ -167,18 +121,17 @@ state such as a spinner drawn over an error.
 documented there — specific resolvers are consulted before `DirectUrlResolver`, which
 would otherwise claim any URL ending in `.mp4`.
 
-**Why a foreground service rather than `WorkManager`:** the download must stream
-progress into a live UI at sub-second granularity while also surviving the Activity.
+**Why a foreground service rather than `WorkManager`:** the download streams progress
+into a live UI at sub-second granularity while also surviving the Activity.
 `WorkManager` is built for deferrable work and its progress channel is coarser than
 that; a foreground service with a `StateFlow` gives the UI an exact feed and the user a
-cancellable notification. `WorkManager` would be the right call if downloads needed to
-be queued and retried across reboots — a reasonable next step, not what this brief asks
-for.
+cancellable notification. `WorkManager` becomes the right call once downloads need
+queuing and retry across reboots.
 
 **Why no DI framework:** the graph is four objects wide and stateless apart from the
-HTTP client. Every class still takes its dependencies through the constructor, so
-substituting a fake `NetworkMonitor` or resolver in a test needs no container. Hilt
-would earn its keep once the graph spans feature modules.
+HTTP client. Every class takes its dependencies through the constructor, so substituting
+a fake `NetworkMonitor` or resolver in a test needs no container. Hilt earns its keep
+once the graph spans feature modules.
 
 ---
 
@@ -189,90 +142,77 @@ to get stuck inside one.
 
 | Decision | Why |
 |---|---|
-| **Clipboard link is offered on resume** | The user arrives having just copied a link somewhere else. Asking them to paste it is asking them to repeat something the app can already see. A banner offers it; it is never pasted silently, and it is suppressed once a result is on screen. |
+| **Clipboard link is offered on resume** | The user arrives having just copied a link somewhere else. A banner offers it; it is never pasted silently, and it is suppressed once a result is on screen. |
 | **Paste resolves immediately** | Paste-then-press-Fetch is a step with no decision in it. |
-| **Results scroll into view** | On a short screen the result card renders below the fold, so the user would press Download and appear to get nothing. |
-| **Open and Share on completion** | A download is not finished when a file name appears — it is finished when the user can watch the video. |
-| **Retry is conditional** | A private video or an unsupported host will never succeed on a second attempt, so no retry button is drawn. Inviting someone to fail again is worse than saying no once. |
+| **Results scroll into view** | On a short screen the result renders below the fold, so the user would press Download and appear to get nothing. |
+| **Open and Share on completion** | A download is finished when the user can watch the video, not when a file name appears. |
+| **Retry is conditional** | A private video or an unsupported host will never succeed on a second attempt, so no retry button is drawn. |
 | **Cancellation is not styled as an error** | The user pressed the button the app offered them; alarm colours would be telling them off for it. |
 | **Quality chips disable mid-download** | Changing the rendition while bytes are moving has no meaning; greying them out says so without an error message. |
-| **Indeterminate bar when size is unknown** | Some sources send no `Content-Length`. A bar that sits at a confident 0% is a lie; an indeterminate one is not. |
-| **Segment-count progress for HLS** | A segmented stream has no total size, but the number of segments finished is exact — better than a percentage derived from a bitrate estimate. |
+| **Indeterminate bar when size is unknown** | Some sources send no `Content-Length`. A bar sitting at a confident 0% is a lie; an indeterminate one is not. |
 | **Thumbnail dimmed when undownloadable** | Signals "found, but unavailable" without pretending the download is about to start. |
+| **`singleTop` launch mode** | A link shared while the app is open reaches the running screen instead of stacking a second copy behind it. |
 
 The UI follows the system light/dark theme and adopts Material You dynamic colour on
 Android 12+, so it matches the device rather than imposing a palette.
 
+---
+
 ## Edge cases
 
-Each one in the brief maps to a case of the sealed `DownloadError` type, so the
-compiler forces the UI to render a state for all of them — a new failure cannot be added
-without every `when` being updated.
+Each one in the brief maps to a case of the sealed `DownloadError` type, so the compiler
+forces the UI to render a state for all of them — a new failure cannot be added without
+every `when` being updated.
 
 | Edge case | Handling |
 |---|---|
 | Invalid URL | `UrlValidator` extracts the first URL from pasted share text and validates the host. Nothing usable → `InvalidUrl` |
 | Unsupported URL | No resolver claims the host → `UnsupportedPlatform(host)`, naming the host |
-| No downloadable media | Resolver finds no `og:video`, or a direct link answers with a non-video content type → `NoMediaFound` |
-| Network unavailable | `NetworkMonitor` checks for a *validated* route before any request, so a Wi-Fi connection with no internet counts as offline. Fails immediately instead of waiting out a timeout |
-| Download interrupted | Partial bytes stay in a `.part` file; retry resumes with a `Range` header. A `200` reply to a ranged request is detected and the partial file discarded |
-| Insufficient storage | Checked before starting against the resolved size plus a 50 MB headroom, then re-checked once the real `Content-Length` is known. `ENOSPC` mid-write is mapped to the same error |
+| No downloadable media | The link resolves but carries no media, or a direct link answers with a non-video content type → `NoMediaFound`. Where a preview exists but the video is withheld → `NoPublicMedia`, which says which platform and why |
+| Network unavailable | `NetworkMonitor` requires a *validated* route before any request, so Wi-Fi with no internet counts as offline. Fails immediately instead of waiting out a timeout |
+| Download interrupted | Partial bytes stay in a `.part` file; retry resumes with a `Range` header. A `200` reply to a ranged request is detected and the partial discarded |
+| Insufficient storage | Checked before starting against the resolved size plus a 50 MB headroom, then re-checked once the real `Content-Length` is known. `ENOSPC` mid-write maps to the same error |
 | User cancels | Cancellation propagates through the coroutine to the read loop. The partial file is deliberately kept so the download can resume later |
 | Very large video | Streamed through a 64 KB buffer — memory use is constant regardless of file size. Progress is throttled to 5 updates/sec so the UI is not flooded |
 | Duplicate download | The file name is deterministic per (source URL, quality); MediaStore is queried for it before any bandwidth is spent → `AlreadyDownloaded` |
 | App goes to background | The transfer runs in a foreground service with a cancellable notification, independent of the Activity and the ViewModel |
-| Multiple qualities | HLS master playlists are parsed for every rendition they advertise, producing a real `1080p / 720p / 480p / 288p / 184p` chip row that defaults to the highest. Variants sharing a resolution at different bitrates are collapsed to the best one, so no two chips look identical. A progressive `.mp4` genuinely has one rendition and is labelled by its real height rather than being padded with resolutions the source cannot serve |
+| Multiple qualities | `ResolvedMedia` carries a rendition list and the UI renders a chip per entry, defaulting to the highest. Facebook supplies HD and SD; a source with one rendition is labelled by its real height rather than padded with resolutions it cannot serve |
 | Requires authentication | Story and private links → `AuthenticationRequired`. No bypass is attempted |
 
 Two further cases the brief did not list, but that occur in practice:
 
-- **Server refuses the request** → `ServerError(code)` with the status shown.
-- **No `Content-Length`** → percentage is `null`, and the UI shows an indeterminate bar
+- **Server refuses the request** → `ServerError(code)`, with the status shown.
+- **No `Content-Length`** → percentage is `null` and the UI shows an indeterminate bar
   rather than a fake 0%.
-
-Retry is offered only for errors that can plausibly succeed on a second attempt. A
-private video or an unsupported host shows no retry button, because inviting the user to
-fail again is worse than saying no once.
 
 ---
 
 ## Tests
 
-Pure-JVM unit tests cover the logic that is worth protecting from regression:
+Pure-JVM unit tests cover the logic worth protecting from regression:
 
 - `UrlValidatorTest` — share-text extraction, trailing punctuation, hosts without a dot, non-HTTP schemes
-- `OpenGraphParserTest` — both attribute orders, both quote styles, HTML entity unescaping
+- `InstagramEmbedParserTest` — single/double JSON escaping, `\uXXXX` ampersands, absent video
+- `FacebookEmbedParserTest` — HD/SD ordering, unescaping, SD-only sources, login walls
+- `OpenGraphParserTest` — both attribute orders, both quote styles, named and numeric entities
 - `FileNamingTest` — determinism, collision resistance across sources, illegal-character stripping
-- `HlsPlaylistParserTest` — master vs media detection, variant/URI pairing, duration totals, fMP4 vs MPEG-TS, relative and absolute segment resolution
 - `FormattingTest` — size and speed boundaries
 
-The resolvers and `Downloader` are constructor-injected and would be covered next with
-`MockWebServer`, which exercises redirect, `206`, truncated-body and `401` paths without
+`Downloader` and the resolvers are constructor-injected; the next layer of coverage is
+`MockWebServer`, exercising redirect, `206`, truncated-body and `401` paths without
 touching a real network.
 
 ---
 
 ## Known limitations
 
-- Instagram and Facebook downloads both read the platforms' public embed endpoints —
-  surfaces served anonymously and built for third-party embedding, but whose inline
-  JSON is undocumented. Coverage is at their discretion and can change without notice;
-  the app degrades to a preview with an explanation, never a crash.
-- Facebook's embed carries no thumbnail field, so Facebook results render without a
-  preview image. The card handles a null thumbnail rather than showing a broken one.
-- One download at a time. A queue is a natural extension, and the service is already the
+- Instagram and Facebook are resolved through the platforms' public embed endpoints.
+  Those are served anonymously and built for third-party embedding, but their inline
+  JSON is undocumented, so coverage per post is at the platforms' discretion and can
+  change. The app degrades to a preview with an explanation, never a crash.
+- One download at a time. A queue is a natural extension and the service is already the
   right place for it.
 - Resume survives a retry within the session; partials live in `cacheDir`, so the OS may
   reclaim them under storage pressure.
 - No download history screen. The MediaStore query used for duplicate detection is the
   foundation one would build it on.
-- HLS renditions restart rather than resume — a half-written concatenation has no
-  segment boundary to safely continue from. Recording the last completed segment index
-  would fix this; progressive downloads already resume.
-- HLS segments are fetched sequentially. Parallel fetching with ordered assembly would
-  be faster, at the cost of holding more of the file in flight.
-- Encrypted HLS (`EXT-X-KEY`) is detected and refused rather than decrypted. Assembling
-  encrypted segments would produce a file that reports success and then fails to play,
-  so the app stops with a specific message instead.
-- Alternate audio renditions and subtitle tracks in a master playlist are ignored; only
-  the muxed video rendition is downloaded.

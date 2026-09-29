@@ -16,11 +16,7 @@ internal object FileNaming {
 
     private val MEDIA_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "m4v", "3gp")
 
-    fun buildFileName(
-        media: ResolvedMedia,
-        quality: VideoQuality,
-        extension: String = "mp4",
-    ): String {
+    fun buildFileName(media: ResolvedMedia, quality: VideoQuality): String {
         // A direct link's title is its file name; strip its extension so it doesn't
         // survive as junk mid-name ("clipmp4").
         val titleWithoutExtension = media.title
@@ -38,6 +34,6 @@ internal object FileNaming {
         // Source-URL hash keeps identical titles from different posts apart.
         val sourceHash = media.sourceUrl.hashCode().absoluteValue.toString(36)
 
-        return "${media.platform.name.lowercase()}_${safeTitle}_${quality.label}_$sourceHash.$extension"
+        return "${media.platform.name.lowercase()}_${safeTitle}_${quality.label}_$sourceHash.mp4"
     }
 }

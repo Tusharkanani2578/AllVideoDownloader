@@ -22,10 +22,6 @@ sealed class DownloadError(val userMessage: String) {
                 "signing in, so only its preview could be loaded."
         )
 
-    /** Encrypted segments would concatenate into a file that looks fine but won't play. */
-    data object EncryptedStream :
-        DownloadError("This stream is encrypted and can't be saved as a video file.")
-
     data object AuthenticationRequired :
         DownloadError("This video is private or requires sign-in, so it can't be downloaded.")
 

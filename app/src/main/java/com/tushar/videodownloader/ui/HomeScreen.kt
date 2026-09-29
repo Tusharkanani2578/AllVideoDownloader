@@ -351,8 +351,8 @@ private fun MediaCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            // A source can advertise many renditions — an HLS master playlist routinely
-            // carries five — so the chips wrap instead of overflowing off-screen.
+            // Chips wrap rather than overflowing off-screen when a source offers
+            // several renditions.
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -634,7 +634,7 @@ private fun ErrorCard(
 private fun EmptyState() {
     // Only what a user can actually paste. WhatsApp media URLs are encrypted blobs the
     // user never sees, so advertising them would promise something unreachable.
-    val platforms = remember { listOf("Instagram", "Facebook", "HLS streams", "Direct links") }
+    val platforms = remember { listOf("Instagram", "Facebook", "Direct links") }
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 28.dp),

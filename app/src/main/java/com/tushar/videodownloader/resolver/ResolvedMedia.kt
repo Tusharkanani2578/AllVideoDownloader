@@ -1,16 +1,17 @@
 package com.tushar.videodownloader.resolver
 
 /**
- * One downloadable rendition. For HLS, [url] is the media-playlist URL and
- * [bandwidthBitsPerSecond] enables a size estimate before any segment is fetched.
+ * One downloadable rendition.
+ *
+ * @param sizeBytes null when the source advertises no length, which disables the
+ *   pre-flight storage check for this item rather than guessing at one.
+ * @param heightPx vertical resolution, used to order renditions and pick a default.
  */
 data class VideoQuality(
     val label: String,
     val url: String,
     val sizeBytes: Long? = null,
     val heightPx: Int = 0,
-    val isHls: Boolean = false,
-    val bandwidthBitsPerSecond: Long = 0L,
 )
 
 data class ResolvedMedia(
@@ -28,5 +29,4 @@ enum class Platform(val displayName: String) {
     FACEBOOK("Facebook"),
     WHATSAPP("WhatsApp"),
     DIRECT_LINK("Direct link"),
-    HLS_STREAM("HLS stream"),
 }
