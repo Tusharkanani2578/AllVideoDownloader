@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -47,6 +48,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -73,6 +75,7 @@ import com.tushar.videodownloader.core.DownloadError
 import com.tushar.videodownloader.core.toReadableSize
 import com.tushar.videodownloader.core.toReadableSpeed
 import com.tushar.videodownloader.download.DownloadProgress
+import com.tushar.videodownloader.resolver.MediaKind
 import com.tushar.videodownloader.resolver.MediaPreview
 import com.tushar.videodownloader.resolver.ResolvedMedia
 import com.tushar.videodownloader.resolver.VideoQuality
@@ -102,10 +105,13 @@ fun HomeScreen(
     val clipboard = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
-    // Results render below the input card, which on a short screen puts them under the
-    // fold. Scrolling to them means the user never has to hunt for what just happened.
-    LaunchedEffect(state.stage, state.error) {
-        if (state.media != null || state.error != null || state.download != null) {
+    // A freshly resolved link renders below the input card, which on a short screen puts
+    // it under the fold — so the content is brought into view once, when it appears.
+    // Keyed on the result itself rather than on stage: scrolling again when a download
+    // starts or finishes would yank the page out from under someone who had scrolled it
+    // themselves.
+    LaunchedEffect(state.media?.sourceUrl, state.preview?.title, state.error) {
+        if (state.media != null || state.preview != null || state.error != null) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
@@ -129,6 +135,17 @@ fun HomeScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
+            )
+        },
+        // The primary action lives in a fixed bar rather than in the scrolling content.
+        // Downloading is a state the whole screen is in, so its progress should not
+        // push the page around or scroll out of sight while it runs.
+        bottomBar = {
+            ActionBar(
+                state = state,
+                onDownload = onDownload,
+                onCancel = onCancel,
+                onDismissResult = onDismissResult,
             )
         },
     ) { padding ->
@@ -179,40 +196,71 @@ fun HomeScreen(
                 )
             }
 
-            when (val download = state.download) {
-                is DownloadProgress.Preparing -> ProgressCard(null, onCancel)
-                is DownloadProgress.Running -> ProgressCard(download, onCancel)
-                is DownloadProgress.Completed -> CompletedCard(download, onDismissResult)
-                else -> Unit
-            }
-
-            AnimatedVisibility(
-                visible = state.media != null &&
-                    !state.isDownloading &&
-                    state.stage != HomeUiState.Stage.Done,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
-            ) {
-                Button(
-                    onClick = onDownload,
-                    shape = CardShape,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = null)
-                    Spacer(Modifier.size(10.dp))
-                    Text(
-                        text = stringResource(R.string.action_download),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-
             if (state.media == null && state.preview == null && state.error == null &&
                 state.stage == HomeUiState.Stage.Idle
             ) {
                 EmptyState()
             }
         }
+    }
+}
+
+// -------------------------------------------------------------------- action bar
+
+/**
+ * The screen's single action surface, fixed above the navigation bar.
+ *
+ * It shows whichever of the three mutually exclusive actions applies — download, watch
+ * the running transfer, or open what was saved — so the content above never reflows
+ * when the download state changes.
+ */
+@Composable
+private fun ActionBar(
+    state: HomeUiState,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onDismissResult: () -> Unit,
+) {
+    val download = state.download
+    val showDownloadButton = state.media != null &&
+        download == null &&
+        state.stage != HomeUiState.Stage.Done
+
+    AnimatedVisibility(
+        visible = download != null || showDownloadButton,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically(),
+    ) {
+        Surface(
+            tonalElevation = 3.dp,
+            shadowElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Box(Modifier.navigationBarsPadding().padding(16.dp)) {
+                when (download) {
+                    is DownloadProgress.Preparing -> ProgressContent(null, onCancel)
+                    is DownloadProgress.Running -> ProgressContent(download, onCancel)
+                    is DownloadProgress.Completed -> CompletedContent(download, onDismissResult)
+                    else -> DownloadButton(onDownload)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadButton(onDownload: () -> Unit) {
+    Button(
+        onClick = onDownload,
+        shape = CardShape,
+        modifier = Modifier.fillMaxWidth().height(54.dp),
+    ) {
+        Icon(Icons.Default.Download, contentDescription = null)
+        Spacer(Modifier.size(10.dp))
+        Text(
+            text = stringResource(R.string.action_download),
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -325,7 +373,11 @@ private fun MediaCard(
 ) {
     Card(shape = CardShape) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Thumbnail(media.thumbnailUrl, dimmed = false)
+            Thumbnail(
+                url = media.thumbnailUrl,
+                dimmed = false,
+                showPlayBadge = media.kind == MediaKind.VIDEO,
+            )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AssistChip(onClick = {}, label = { Text(media.platform.displayName) })
@@ -388,7 +440,8 @@ private fun MediaCard(
 private fun UnavailablePreviewCard(preview: MediaPreview) {
     Card(shape = CardShape) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Thumbnail(preview.thumbnailUrl, dimmed = true)
+            // This card only appears when a video was withheld, so the badge is accurate.
+            Thumbnail(preview.thumbnailUrl, dimmed = true, showPlayBadge = true)
 
             AssistChip(onClick = {}, label = { Text(preview.platform.displayName) })
 
@@ -404,7 +457,7 @@ private fun UnavailablePreviewCard(preview: MediaPreview) {
 }
 
 @Composable
-private fun Thumbnail(url: String?, dimmed: Boolean) {
+private fun Thumbnail(url: String?, dimmed: Boolean, showPlayBadge: Boolean) {
     if (url == null) return
 
     Box(
@@ -422,20 +475,23 @@ private fun Thumbnail(url: String?, dimmed: Boolean) {
             alpha = if (dimmed) 0.45f else 1f,
             modifier = Modifier.fillMaxSize(),
         )
-        // Marks the thumbnail as video rather than a still image.
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.45f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(28.dp),
-            )
+        // Marks the thumbnail as video. A photo post shows none — a play button over a
+        // still image promises something the download will not deliver.
+        if (showPlayBadge) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
     }
 }
@@ -443,63 +499,64 @@ private fun Thumbnail(url: String?, dimmed: Boolean) {
 // ---------------------------------------------------------------------- progress
 
 @Composable
-private fun ProgressCard(progress: DownloadProgress.Running?, onCancel: () -> Unit) {
+private fun ProgressContent(progress: DownloadProgress.Running?, onCancel: () -> Unit) {
     val percent = progress?.percent
     val animatedFraction by animateFloatAsState(
         targetValue = (percent ?: 0) / 100f,
         label = "downloadProgress",
     )
 
-    Card(shape = CardShape) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.label_downloading),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = percent?.let { "$it%" } ?: "",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.label_downloading),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = percent?.let { "$it%" } ?: "",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
 
-            // A null percent means neither a declared size nor a segment count is
-            // available, so an indeterminate bar is honest where a number would not be.
-            if (percent != null) {
-                LinearProgressIndicator(
-                    progress = { animatedFraction },
-                    strokeCap = StrokeCap.Round,
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                )
-            } else {
-                LinearProgressIndicator(
-                    strokeCap = StrokeCap.Round,
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                )
-            }
+        // A null percent means the source declared no size, so an indeterminate bar is
+        // honest where a number would not be.
+        if (percent != null) {
+            LinearProgressIndicator(
+                progress = { animatedFraction },
+                strokeCap = StrokeCap.Round,
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+            )
+        } else {
+            LinearProgressIndicator(
+                strokeCap = StrokeCap.Round,
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+            )
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = progress?.let { p ->
-                        buildString {
-                            append(p.bytesDownloaded.toReadableSize())
-                            p.totalBytes?.let { append(" / ${it.toReadableSize()}") }
-                        }
-                    } ?: stringResource(R.string.label_preparing),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = progress?.let { p ->
+                    buildString {
+                        append(p.bytesDownloaded.toReadableSize())
+                        p.totalBytes?.let { append(" / ${it.toReadableSize()}") }
+                    }
+                } ?: stringResource(R.string.label_preparing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 progress?.takeIf { it.bytesPerSecond > 0 }?.let {
                     Text(
                         text = it.bytesPerSecond.toReadableSpeed(),
@@ -507,70 +564,67 @@ private fun ProgressCard(progress: DownloadProgress.Running?, onCancel: () -> Un
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-
-            TextButton(onClick = onCancel, modifier = Modifier.align(Alignment.End)) {
-                Text(stringResource(R.string.action_cancel))
+                TextButton(onClick = onCancel) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CompletedCard(result: DownloadProgress.Completed, onDismiss: () -> Unit) {
+private fun CompletedContent(result: DownloadProgress.Completed, onDismiss: () -> Unit) {
     val context = LocalContext.current
 
-    Card(
-        shape = CardShape,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-                Spacer(Modifier.size(10.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.size(10.dp))
+            Column(Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.label_download_complete),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
+                Text(
+                    text = result.fileName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-
-            Text(
-                text = stringResource(R.string.label_saved_to_gallery, result.fileName),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-
-            // A download is only finished once the user can actually watch it.
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FilledTonalButton(
-                    onClick = { MediaActions.openInGallery(context, result.galleryUri) },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.action_open))
-                }
-                FilledTonalButton(
-                    onClick = { MediaActions.share(context, result.galleryUri) },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.action_share))
-                }
-            }
-
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_download_another))
+            }
+        }
+
+        // A download is only finished once the user can actually watch it.
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FilledTonalButton(
+                onClick = { MediaActions.openInGallery(context, result.galleryUri) },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text(stringResource(R.string.action_open))
+            }
+            FilledTonalButton(
+                onClick = { MediaActions.share(context, result.galleryUri) },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text(stringResource(R.string.action_share))
             }
         }
     }

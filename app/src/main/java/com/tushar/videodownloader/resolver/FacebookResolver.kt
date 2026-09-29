@@ -32,8 +32,8 @@ class FacebookResolver(
     override fun canHandle(url: HttpUrl): Boolean = url.host in hosts
 
     override suspend fun resolve(url: HttpUrl): Result<ResolvedMedia> {
-        val fromEmbed = resolveViaEmbed(url)
-        if (fromEmbed != null) return Result.success(fromEmbed)
+        resolveViaEmbed(url)?.let { return Result.success(it) }
+        resolvePhoto(url)?.let { return Result.success(it) }
 
         val fallback = super.resolve(url)
 
@@ -75,6 +75,31 @@ class FacebookResolver(
     private fun findOpenGraphImage(canonical: HttpUrl): String? =
         fetchHtml(canonical)?.let { OpenGraphParser.findContent(it, "og:image") }
 
+    /**
+     * Resolves a photo post through the canonical page's `og:image`.
+     *
+     * Facebook serves that at up to 1152×2048 — the image as posted — whereas the post
+     * embed only offers a 280px thumbnail. Reached only after the video path found
+     * nothing, and skipped when the page declares an `og:video`, since that means a
+     * gated video rather than a photo and should be reported as needing sign-in.
+     */
+    private suspend fun resolvePhoto(url: HttpUrl): ResolvedMedia? = withContext(Dispatchers.IO) {
+        val canonical = resolveShareLink(url) ?: url
+        val html = fetchHtml(canonical) ?: return@withContext null
+
+        if (OpenGraphParser.findContent(html, "og:video") != null) return@withContext null
+        val imageUrl = OpenGraphParser.findContent(html, "og:image") ?: return@withContext null
+
+        ResolvedMedia(
+            sourceUrl = url.toString(),
+            title = "Facebook photo",
+            thumbnailUrl = imageUrl,
+            qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
+            platform = platform,
+            kind = MediaKind.IMAGE,
+        )
+    }
+
     /** `/share/r/<id>/` and `fb.watch` links redirect to the canonical video URL. */
     private fun resolveShareLink(url: HttpUrl): HttpUrl? {
         val needsResolving = url.host == "fb.watch" || url.encodedPath.startsWith("/share/")
@@ -88,8 +113,15 @@ class FacebookResolver(
 
         return try {
             httpClient.client.newCall(request).execute().use { response ->
-                // Strip tracking parameters; the embed endpoint wants a clean URL.
-                response.request.url.newBuilder().query(null).build()
+                val resolved = response.request.url
+                // A `.php` endpoint carries its identity in the query — `story.php`
+                // is nothing without `story_fbid`. Path-based URLs like `/reel/<id>/`
+                // only carry tracking there, so those are cleaned.
+                if (resolved.encodedPath.endsWith(".php")) {
+                    resolved
+                } else {
+                    resolved.newBuilder().query(null).build()
+                }
             }
         } catch (e: IOException) {
             null

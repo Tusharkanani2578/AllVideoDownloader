@@ -14,11 +14,38 @@ internal object InstagramEmbedParser {
 
     private val UNICODE_ESCAPE = Regex("""\\u([0-9a-fA-F]{4})""")
 
+    /** CDN path segment Instagram uses for post images, as opposed to avatars (`-19`). */
+    private const val POST_IMAGE_PATH = "t51.82787-15"
+
     fun findVideoUrl(embedHtml: String): String? =
         VIDEO_URL.find(embedHtml)?.groupValues?.get(1)?.let(::unescape)
 
+    /**
+     * True when the embed describes a photo post rather than a video one.
+     *
+     * A photo has no video to withhold, so reporting it as "requires sign-in" would be
+     * wrong. Instagram types image media as `GraphImage` (`XDTGraphImage` on newer
+     * responses) and video as `GraphVideo`.
+     */
+    fun isPhotoPost(embedHtml: String): Boolean =
+        embedHtml.contains("GraphImage") && !embedHtml.contains("GraphVideo")
+
     fun findThumbnailUrl(embedHtml: String): String? =
         DISPLAY_URL.find(embedHtml)?.groupValues?.get(1)?.let(::unescape)
+
+    /**
+     * Full-resolution post image from the captioned embed.
+     *
+     * The `og:image` on the post page is a 640×640 square crop — a preview, not the
+     * photo. The captioned embed references the same file under `t51.*-15` with an
+     * `stp` transform that applies no crop or size cap, which is the image as posted.
+     * The whole signed URL is taken verbatim: its `oh`/`oe` signature covers every
+     * parameter, so editing any of them returns 403.
+     */
+    fun findFullImageUrl(captionedEmbedHtml: String): String? =
+        captionedEmbedHtml.split('"')
+            .firstOrNull { it.contains(POST_IMAGE_PATH) && it.startsWith("http") }
+            ?.replace("&amp;", "&")
 
     fun findUsername(embedHtml: String): String? =
         USERNAME.find(embedHtml)?.groupValues?.get(1)

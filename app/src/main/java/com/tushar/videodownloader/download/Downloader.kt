@@ -3,6 +3,7 @@ package com.tushar.videodownloader.download
 import com.tushar.videodownloader.core.DownloadError
 import com.tushar.videodownloader.network.HttpClientProvider
 import com.tushar.videodownloader.network.NetworkMonitor
+import com.tushar.videodownloader.resolver.MediaKind
 import com.tushar.videodownloader.resolver.ResolvedMedia
 import com.tushar.videodownloader.resolver.VideoQuality
 import kotlinx.coroutines.CancellationException
@@ -71,7 +72,7 @@ class Downloader(
         quality: VideoQuality,
     ) {
         val fileName = FileNaming.buildFileName(media, quality)
-        if (rejectIfAlreadySaved(fileName)) return
+        if (rejectIfAlreadySaved(fileName, media.kind)) return
         if (rejectIfNoRoom(quality.sizeBytes)) return
 
         val tempFile = File(tempDir, "$fileName.part")
@@ -118,15 +119,16 @@ class Downloader(
                 return
             }
 
-            val uri = mediaStoreSaver.publish(tempFile, fileName)
+            val uri = mediaStoreSaver.publish(tempFile, fileName, media.kind)
             emit(DownloadProgress.Completed(fileName, uri.toString()))
         }
     }
 
     private suspend fun FlowCollector<DownloadProgress>.rejectIfAlreadySaved(
         fileName: String,
+        kind: MediaKind,
     ): Boolean {
-        val existing = mediaStoreSaver.findExisting(fileName) ?: return false
+        val existing = mediaStoreSaver.findExisting(fileName, kind) ?: return false
         emit(DownloadProgress.Failed(DownloadError.AlreadyDownloaded(existing)))
         return true
     }

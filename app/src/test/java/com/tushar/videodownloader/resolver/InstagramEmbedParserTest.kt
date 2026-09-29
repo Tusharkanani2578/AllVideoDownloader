@@ -1,7 +1,9 @@
 package com.tushar.videodownloader.resolver
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InstagramEmbedParserTest {
@@ -54,6 +56,45 @@ class InstagramEmbedParserTest {
             "https://cdn.example.com/clip.mp4?x=1",
             InstagramEmbedParser.findVideoUrl(plain),
         )
+    }
+
+    @Test
+    fun `finds the full-size post image and unescapes entities`() {
+        val captioned = """<img src="https://i.fna.fbcdn.net/v/t51.82787-15/a.jpg?stp=dst-jpg&amp;oh=1&amp;oe=2" />"""
+
+        assertEquals(
+            "https://i.fna.fbcdn.net/v/t51.82787-15/a.jpg?stp=dst-jpg&oh=1&oe=2",
+            InstagramEmbedParser.findFullImageUrl(captioned),
+        )
+    }
+
+    @Test
+    fun `ignores the avatar path when looking for the post image`() {
+        val avatarOnly = """<img src="https://i.fna.fbcdn.net/v/t51.82787-19/avatar.jpg" />"""
+
+        assertNull(InstagramEmbedParser.findFullImageUrl(avatarOnly))
+    }
+
+    @Test
+    fun `identifies a photo post`() {
+        val photo = """{\"__typename\":\"GraphImage\",\"display_url\":\"https:\/\/x\/a.jpg\"}"""
+
+        assertTrue(InstagramEmbedParser.isPhotoPost(photo))
+    }
+
+    @Test
+    fun `does not call a video post a photo`() {
+        assertFalse(InstagramEmbedParser.isPhotoPost(embedHtml))
+
+        val video = """{"__typename":"GraphVideo","video_url":"https://x/a.mp4"}"""
+        assertFalse(InstagramEmbedParser.isPhotoPost(video))
+    }
+
+    @Test
+    fun `does not call a carousel with video a photo`() {
+        val sidecar = """{"__typename":"GraphSidecar","edges":[{"__typename":"GraphImage"},{"__typename":"GraphVideo"}]}"""
+
+        assertFalse(InstagramEmbedParser.isPhotoPost(sidecar))
     }
 
     @Test

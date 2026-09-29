@@ -43,8 +43,7 @@ class InstagramResolver(
             return Result.failure(ResolveException(DownloadError.NoMediaFound))
         }
 
-        val fromEmbed = resolveViaEmbed(url)
-        if (fromEmbed != null) return Result.success(fromEmbed)
+        resolveViaEmbed(url)?.let { return it }
 
         val fallback = super.resolve(url)
 
@@ -57,7 +56,15 @@ class InstagramResolver(
         return fallback
     }
 
-    private suspend fun resolveViaEmbed(url: HttpUrl): ResolvedMedia? =
+    /**
+     * Resolves through the public embed page.
+     *
+     * @return the media when the post carries a video; a failure when the embed gives a
+     *   definite answer the caller should not override — a photo post has no video to
+     *   withhold, so it must not be reported as sign-in required; `null` when the embed
+     *   says nothing useful and the Open Graph path should be tried instead.
+     */
+    private suspend fun resolveViaEmbed(url: HttpUrl): Result<ResolvedMedia>? =
         withContext(Dispatchers.IO) {
             val embedUrl = buildEmbedUrl(url) ?: return@withContext null
 
@@ -77,17 +84,85 @@ class InstagramResolver(
                 return@withContext null
             }
 
-            val videoUrl = InstagramEmbedParser.findVideoUrl(html) ?: return@withContext null
-
             val username = InstagramEmbedParser.findUsername(html)
-            ResolvedMedia(
-                sourceUrl = url.toString(),
-                title = username?.let { "$it — Instagram video" } ?: "Instagram video",
-                thumbnailUrl = InstagramEmbedParser.findThumbnailUrl(html),
-                qualities = listOf(VideoQuality(label = "Original", url = videoUrl)),
-                platform = platform,
-            )
+            val videoUrl = InstagramEmbedParser.findVideoUrl(html)
+
+            // The plain embed often carries no image at all. The captioned variant
+            // references the post image at full resolution, which is what a photo post
+            // should actually save; og:image is only a 640px square crop.
+            val imageUrl = InstagramEmbedParser.findThumbnailUrl(html)
+                ?: fetchCaptionedEmbed(url)?.let(InstagramEmbedParser::findFullImageUrl)
+                ?: findOpenGraphImage(url)
+
+            when {
+                videoUrl != null -> Result.success(
+                    ResolvedMedia(
+                        sourceUrl = url.toString(),
+                        title = username?.let { "$it — Instagram video" } ?: "Instagram video",
+                        thumbnailUrl = imageUrl,
+                        qualities = listOf(VideoQuality(label = "Original", url = videoUrl)),
+                        platform = platform,
+                        kind = MediaKind.VIDEO,
+                    )
+                )
+
+                // A photo post's `display_url` is the full-resolution image, so the post
+                // is downloadable even though there is no video on it.
+                InstagramEmbedParser.isPhotoPost(html) && imageUrl != null -> Result.success(
+                    ResolvedMedia(
+                        sourceUrl = url.toString(),
+                        title = username?.let { "$it — Instagram photo" } ?: "Instagram photo",
+                        thumbnailUrl = imageUrl,
+                        qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
+                        platform = platform,
+                        kind = MediaKind.IMAGE,
+                    )
+                )
+
+                else -> null
+            }
         }
+
+    /** `/p/<code>/embed/captioned/` — the variant that carries the full-size image. */
+    private fun fetchCaptionedEmbed(url: HttpUrl): String? {
+        val segments = url.pathSegments.filter { it.isNotBlank() }
+        if (segments.size < 2) return null
+        val captioned = "https://www.instagram.com/${segments[0]}/${segments[1]}/embed/captioned/"
+            .toHttpUrlOrNull() ?: return null
+
+        val request = Request.Builder()
+            .url(captioned)
+            .header("User-Agent", EMBED_USER_AGENT)
+            .header("Accept", "text/html")
+            .get()
+            .build()
+
+        return try {
+            httpClient.client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) response.body?.string() else null
+            }
+        } catch (e: IOException) {
+            null
+        }
+    }
+
+    private fun findOpenGraphImage(postUrl: HttpUrl): String? {
+        val request = Request.Builder()
+            .url(postUrl)
+            .header("User-Agent", HttpClientProvider.USER_AGENT)
+            .header("Accept", "text/html")
+            .get()
+            .build()
+
+        return try {
+            httpClient.client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                OpenGraphParser.findContent(response.body?.string().orEmpty(), "og:image")
+            }
+        } catch (e: IOException) {
+            null
+        }
+    }
 
     /** `/reel/<code>/` → `https://www.instagram.com/reel/<code>/embed/` */
     private fun buildEmbedUrl(url: HttpUrl): HttpUrl? {

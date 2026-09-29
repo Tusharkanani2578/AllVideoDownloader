@@ -25,72 +25,51 @@ Unit tests: `./gradlew test`
 
 | Source | Status | How |
 |---|---|---|
-| Public Instagram post / reel | **Downloads** | Reads `video_url` from Instagram's public `/embed/` page |
+| Public Instagram reel / video post | **Downloads** | Reads `video_url` from Instagram's public `/embed/` page |
+| Public Instagram photo post | **Downloads** | Full-resolution image from the `/embed/captioned/` page |
 | Public Facebook video / reel / share link | **Downloads** | Reads `hd_src` and `sd_src` from Facebook's `plugins/video.php` embed — two real quality options |
+| Public Facebook photo post | **Downloads** | `og:image` on the canonical page, which Facebook serves at up to 1152×2048 |
 | Direct video URL (`.mp4`, `.webm`, …) | **Downloads** | `HEAD` for size, then a ranged `GET` |
 | Link shared over WhatsApp | **Downloads** | A shared video link is an ordinary URL — same path as above |
 | Instagram story | **Refused** | Bound to a signed-in viewer; no public surface serves it |
 | Private / friends-only post | **Refused** | Reported as "requires sign-in" |
 | WhatsApp's own media URLs | **Not reachable by pasting** | Encrypted CDN blobs whose keys live in the message — there is nothing a user can paste |
 
-Facebook is included because the brief asks for a quality selector — `360p / 720p /
-1080p / 4K` in the flow, and "API/source returning multiple video qualities" among the
-edge cases. Instagram's embed exposes one rendition and a progressive `.mp4` is a single
-file; Facebook's embed publishes HD and SD, so the selection path runs against a source
-that genuinely offers a choice.
+Photo posts are supported because the brief asks for a public Instagram **post** to be
+downloadable, and a post is as often a photo as a video. A `MediaKind` on the resolved
+media drives the file extension, MIME type and MediaStore collection, so photos land in
+`Pictures/` and videos in `Movies/` without a second download path.
+
+Facebook covers the quality selector the brief asks for — `360p / 720p / 1080p / 4K` in
+the flow, "API/source returning multiple video qualities" among the edge cases. Its
+embed publishes HD and SD, where Instagram's exposes a single rendition.
 
 ---
 
 ## How the platforms are resolved
 
-The brief requires respecting each platform's terms, authentication requirements and
-technical limitations, and forbids bypassing protection on private content. That rules
-out the approach general-purpose downloaders use — replaying a signed-in session, or
-calling an internal API on the user's behalf. This app reads only what the platforms
-serve to unauthenticated clients.
+The brief requires respecting each platform's terms and authentication requirements, and
+forbids bypassing protection on private content. That rules out what general-purpose
+downloaders do — replaying a signed-in session or calling an internal API. This app
+reads only what the platforms publish to unauthenticated clients, through the embed
+endpoints they provide for third-party sites.
 
-### Instagram
+**Instagram.** The post page carries preview metadata but no media URL; the `/embed/`
+page carries `video_url`. Instagram serves two embed variants by user agent, and only
+the static one (requested with a plain WebKit UA) includes it. Photo posts take their
+full-resolution image from `/embed/captioned/` — `og:image` is a 640px square crop. CDN
+URLs are used exactly as published; their signature covers every parameter.
 
-Instagram's post page serves rich preview metadata to an anonymous client but no media
-URL. Verified against a public reel:
+**Facebook.** `plugins/video.php` exposes `hd_src` and `sd_src` for public videos, which
+become the HD and SD options. Photo posts fall through to the canonical page's
+`og:image`, served at up to 1152×2048. A page declaring an `og:video` is never treated
+as a photo, so a gated video reports sign-in rather than silently saving its poster
+frame. `/share/...` links resolve to their canonical URL first, keeping the query when
+it lands on a `.php` endpoint — `story.php` is meaningless without `story_fbid`.
 
-```
-GET https://www.instagram.com/reel/<shortcode>/     → 200 OK, 711 KB
-
-og:type ✓   og:title ✓   og:image ✓   og:url ✓   og:description ✓
-og:video ✗
-
-Full-body search for a media URL:
-  "video_url" 0 · "contentUrl" 0 · "video_versions" 0 · any .mp4 reference 0
-```
-
-No login wall is served — the page simply carries no video URL. Instagram's own client
-fetches that separately through an authenticated call.
-
-The `/embed/` page does carry it. That endpoint exists so third-party websites can embed
-public posts, and it is served without authentication:
-
-```
-GET https://www.instagram.com/reel/<shortcode>/embed/    → 200 OK (no login)
-
-with a modern Chrome UA:  640 KB script-driven embed …    video_url ✗
-with a plain WebKit UA:   280 KB static legacy embed …    video_url ✓  (CDN .mp4)
-```
-
-Instagram serves two embed variants by user agent, and the static one carries
-`video_url` inline. The resolver requests that variant, reads the URL, and downloads
-from Instagram's CDN. No login, no session replay, no third-party service.
-
-Where the embed carries no video — private accounts, stories, age-gated posts — the app
-shows the preview it could read and states that the video is not publicly available. It
+Where nothing public is available — private accounts, stories, age-gated posts — the app
+shows whatever preview it could read and says the media is not publicly available. It
 never attempts an authenticated path.
-
-### Facebook
-
-`plugins/video.php` is Facebook's public video embed endpoint. For public videos it
-exposes `hd_src` and `sd_src`, which become the HD and SD options. `/share/...` links
-are followed to their canonical URL first. Gated videos expose nothing there and are
-reported as requiring sign-in.
 
 ---
 
@@ -135,29 +114,6 @@ once the graph spans feature modules.
 
 ---
 
-## UX decisions
-
-The flow in the brief is five steps. Each of these removes one of them, or removes a way
-to get stuck inside one.
-
-| Decision | Why |
-|---|---|
-| **Clipboard link is offered on resume** | The user arrives having just copied a link somewhere else. A banner offers it; it is never pasted silently, and it is suppressed once a result is on screen. |
-| **Paste resolves immediately** | Paste-then-press-Fetch is a step with no decision in it. |
-| **Results scroll into view** | On a short screen the result renders below the fold, so the user would press Download and appear to get nothing. |
-| **Open and Share on completion** | A download is finished when the user can watch the video, not when a file name appears. |
-| **Retry is conditional** | A private video or an unsupported host will never succeed on a second attempt, so no retry button is drawn. |
-| **Cancellation is not styled as an error** | The user pressed the button the app offered them; alarm colours would be telling them off for it. |
-| **Quality chips disable mid-download** | Changing the rendition while bytes are moving has no meaning; greying them out says so without an error message. |
-| **Indeterminate bar when size is unknown** | Some sources send no `Content-Length`. A bar sitting at a confident 0% is a lie; an indeterminate one is not. |
-| **Thumbnail dimmed when undownloadable** | Signals "found, but unavailable" without pretending the download is about to start. |
-| **`singleTop` launch mode** | A link shared while the app is open reaches the running screen instead of stacking a second copy behind it. |
-
-The UI follows the system light/dark theme and adopts Material You dynamic colour on
-Android 12+, so it matches the device rather than imposing a palette.
-
----
-
 ## Edge cases
 
 Each one in the brief maps to a case of the sealed `DownloadError` type, so the compiler
@@ -192,7 +148,7 @@ Two further cases the brief did not list, but that occur in practice:
 Pure-JVM unit tests cover the logic worth protecting from regression:
 
 - `UrlValidatorTest` — share-text extraction, trailing punctuation, hosts without a dot, non-HTTP schemes
-- `InstagramEmbedParserTest` — single/double JSON escaping, `\uXXXX` ampersands, absent video
+- `InstagramEmbedParserTest` — single/double JSON escaping, `\uXXXX` ampersands, absent video, photo-vs-video detection, full-size image extraction
 - `FacebookEmbedParserTest` — HD/SD ordering, unescaping, SD-only sources, login walls
 - `OpenGraphParserTest` — both attribute orders, both quote styles, named and numeric entities
 - `FileNamingTest` — determinism, collision resistance across sources, illegal-character stripping

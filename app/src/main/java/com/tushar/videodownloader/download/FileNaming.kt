@@ -34,6 +34,7 @@ internal object FileNaming {
         // Source-URL hash keeps identical titles from different posts apart.
         val sourceHash = media.sourceUrl.hashCode().absoluteValue.toString(36)
 
-        return "${media.platform.name.lowercase()}_${safeTitle}_${quality.label}_$sourceHash.mp4"
+        return "${media.platform.name.lowercase()}_${safeTitle}_${quality.label}_$sourceHash" +
+            ".${media.kind.fileExtension}"
     }
 }
