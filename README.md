@@ -39,7 +39,7 @@ and why.
 | Public Facebook video / reel / share link | **Works** | Reads `hd_src` and `sd_src` from Facebook's `plugins/video.php` embed — two real quality options |
 | Instagram story | **Rejected deliberately** | Always bound to a signed-in viewer; no public surface exists, embed included |
 | Private / friends-only post | **Rejected deliberately** | Reported as "requires sign-in" |
-| WhatsApp status / WhatsApp's own media URLs | **Not reachable by pasting** | See the note below |
+| WhatsApp's own media URLs | **Not reachable by pasting** | They are encrypted CDN blobs whose keys live in the message, so there is nothing a user can paste |
 
 ### Why Open Graph rather than a private API
 
@@ -115,17 +115,11 @@ Two honest caveats, stated rather than hidden:
   same class of access every link-preview and embed consumer performs, but a production
   release should take a considered position on this rather than inherit mine.
 
-### Two points worth clarifying with the brief
+### One point worth clarifying with the brief
 
-1. **A WhatsApp status has no URL.** Statuses are files on the device under
-   `Android/media/com.whatsapp/WhatsApp/Media/.Statuses/`. They cannot arrive through a
-   paste-URL flow at all; supporting them means a separate "status saver" screen that
-   reads that directory through the Storage Access Framework. The architecture here
-   leaves room for it — it is another entry point into the same download pipeline — but
-   it is not part of the paste-URL flow and has not been built.
-2. **An Instagram story cannot be fetched without authentication**, which conflicts
-   with the no-bypass constraint. The app rejects story links with a clear message
-   rather than resolving the conflict silently in either direction.
+An **Instagram story cannot be fetched without authentication**, which conflicts with
+the no-bypass constraint. The app rejects story links with a clear message rather than
+resolving that conflict silently in either direction.
 
 ---
 
