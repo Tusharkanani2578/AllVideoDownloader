@@ -23,6 +23,22 @@ Unit tests: `./gradlew test`
 
 ## Scope and platform constraints
 
+### Why HLS and Facebook are here
+
+The brief asks for a quality selector — `360p / 720p / 1080p / 4K` in the flow, and
+"API/source returning multiple video qualities" among the edge cases. But Instagram's
+embed exposes exactly one rendition, and a progressive `.mp4` is a single file. Built
+only against those, the selector would have shown one chip forever and that requirement
+would have been decorative.
+
+**HLS** is what makes it real: a master playlist advertises every rendition the source
+actually publishes, so the chips are read rather than invented. It is a means to a
+requirement, not a feature added for its own sake. **Facebook** is a straightforward
+addition beyond the brief — its embed exposes HD and SD, which exercises the same
+selection path with a second real source.
+
+### Instagram, and the line the note draws
+
 The brief asks for Instagram and WhatsApp/shared video URL support, and also says the
 implementation must respect each platform's terms, authentication requirements and
 technical limitations, without bypassing protection on private content.
