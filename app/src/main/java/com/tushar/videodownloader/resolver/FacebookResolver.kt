@@ -80,24 +80,32 @@ class FacebookResolver(
      *
      * Facebook serves that at up to 1152×2048 — the image as posted — whereas the post
      * embed only offers a 280px thumbnail. Reached only after the video path found
-     * nothing, and skipped when the page declares an `og:video`, since that means a
+     * nothing, and abandoned when the page declares an `og:video`, since that means a
      * gated video rather than a photo and should be reported as needing sign-in.
+     *
+     * Two agents are tried, because Facebook does not serve the same page to both — see
+     * [PHOTO_USER_AGENTS]. The `og:video` check is repeated for each, so a gated video
+     * is still never mistaken for a photo and saved as its poster frame.
      */
     private suspend fun resolvePhoto(url: HttpUrl): ResolvedMedia? = withContext(Dispatchers.IO) {
         val canonical = resolveShareLink(url) ?: url
-        val html = fetchHtml(canonical) ?: return@withContext null
 
-        if (OpenGraphParser.findContent(html, "og:video") != null) return@withContext null
-        val imageUrl = OpenGraphParser.findContent(html, "og:image") ?: return@withContext null
+        for (userAgent in PHOTO_USER_AGENTS) {
+            val html = fetchHtml(canonical, userAgent) ?: continue
 
-        ResolvedMedia(
-            sourceUrl = url.toString(),
-            title = "Facebook photo",
-            thumbnailUrl = imageUrl,
-            qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
-            platform = platform,
-            kind = MediaKind.IMAGE,
-        )
+            if (OpenGraphParser.findContent(html, "og:video") != null) return@withContext null
+            val imageUrl = OpenGraphParser.findContent(html, "og:image") ?: continue
+
+            return@withContext ResolvedMedia(
+                sourceUrl = url.toString(),
+                title = "Facebook photo",
+                thumbnailUrl = imageUrl,
+                qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
+                platform = platform,
+                kind = MediaKind.IMAGE,
+            )
+        }
+        null
     }
 
     /** `/share/r/<id>/` and `fb.watch` links redirect to the canonical video URL. */
@@ -128,10 +136,10 @@ class FacebookResolver(
         }
     }
 
-    private fun fetchHtml(url: HttpUrl): String? {
+    private fun fetchHtml(url: HttpUrl, userAgent: String = EMBED_USER_AGENT): String? {
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", EMBED_USER_AGENT)
+            .header("User-Agent", userAgent)
             .header("Accept", "text/html")
             .get()
             .build()
@@ -147,5 +155,18 @@ class FacebookResolver(
 
     private companion object {
         const val EMBED_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+        /**
+         * An album photo's page (`photo.php`) is an empty JavaScript shell unless the
+         * request comes from a link-preview crawler Facebook allowlists by name; no
+         * self-identifying agent qualifies. So the app sends one of those names, and is
+         * claiming an identity that is not its own — stated here because it is a
+         * deliberate call, not an oversight. It changes who the server thinks is asking,
+         * never what is asked for.
+         */
+        const val PREVIEW_CRAWLER_USER_AGENT = "Twitterbot/1.0"
+
+        /** Tried in order: the ordinary agent first, the crawler only if that found nothing. */
+        val PHOTO_USER_AGENTS = listOf(EMBED_USER_AGENT, PREVIEW_CRAWLER_USER_AGENT)
     }
 }
