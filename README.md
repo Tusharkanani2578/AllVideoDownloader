@@ -205,12 +205,12 @@ means giving that class an interface, which is the next thing worth doing.
   degrades to a preview with an explanation, never a crash.
 - A WhatsApp status is listed only once it has been viewed, and only for the 24 hours
   WhatsApp keeps its local copy. Nothing older is recoverable.
-- Duplicate detection does not survive reinstalling the app. Android clears MediaStore
-  ownership of an app's rows when it is uninstalled, and a scoped-storage query returns
-  only owned rows, so files saved by an earlier install are invisible to it and
-  re-saving one produces a second copy named "… (1)". Holding the row ownership would
-  mean asking for a read-media permission over the user's whole gallery, which is far
-  more than duplicate detection is worth; nothing is lost either way.
+- Duplicate detection does not survive reinstalling the app. Under scoped storage a
+  query returns only the rows this app owns, and rows written by an earlier install
+  come back with no owner recorded — measured on device — so they are invisible to the
+  check and re-saving one produces a second copy named "… (1)". Keeping them visible
+  would mean asking for a read-media permission over the user's whole gallery, which is
+  far more than duplicate detection is worth. Nothing is lost either way.
 - One download at a time. A queue is a natural extension and the service is already the
   right place for it.
 - Resume survives a retry within the session; partials live in `cacheDir`, so the OS may
