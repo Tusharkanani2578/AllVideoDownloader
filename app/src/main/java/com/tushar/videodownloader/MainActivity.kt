@@ -10,10 +10,31 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.getSystemService
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tushar.videodownloader.status.StatusScreen
+import com.tushar.videodownloader.status.StatusViewModel
 import com.tushar.videodownloader.ui.HomeScreen
 import com.tushar.videodownloader.ui.HomeViewModel
 import com.tushar.videodownloader.ui.theme.AllVideoDownloaderTheme
@@ -21,6 +42,7 @@ import com.tushar.videodownloader.ui.theme.AllVideoDownloaderTheme
 class MainActivity : ComponentActivity() {
 
     private val viewModel: HomeViewModel by viewModels()
+    private val statusViewModel: StatusViewModel by viewModels()
 
     /**
      * Notification permission is requested, not required.
@@ -30,6 +52,17 @@ class MainActivity : ComponentActivity() {
      */
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
+
+    /**
+     * Folder access for the status screen.
+     *
+     * WhatsApp's status folder is hidden and, from Android 11, unreachable by path, so
+     * the user points the system picker at it once and the grant is persisted.
+     */
+    private val statusFolderAccess =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { treeUri ->
+            treeUri?.let(statusViewModel::onAccessGranted)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,28 +77,82 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AllVideoDownloaderTheme {
-                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+                val snackbarHost = remember { SnackbarHostState() }
 
-                // Clipboard is read only while the app is focused — Android 10+ blocks
-                // background reads, and doing it on focus is also the honest moment: the
-                // user has just returned from copying a link.
+                val homeState by viewModel.uiState.collectAsStateWithLifecycle()
+                val statusState by statusViewModel.uiState.collectAsStateWithLifecycle()
+
                 LifecycleResumeEffect(Unit) {
+                    // Clipboard is read only while the app is focused — Android 10+ blocks
+                    // background reads, and it is also the honest moment: the user has
+                    // just returned from copying a link.
                     viewModel.onClipboardChanged(readClipboardText())
+                    // WhatsApp writes statuses as they are viewed and clears them after a
+                    // day, so the folder is re-read on every return rather than cached.
+                    statusViewModel.refresh()
                     onPauseOrDispose { }
                 }
 
-                HomeScreen(
-                    state = state,
-                    onUrlChanged = viewModel::onUrlChanged,
-                    onFetch = viewModel::onFetchClicked,
-                    onPasteAndFetch = viewModel::onPasteAndFetch,
-                    onUseClipboardSuggestion = viewModel::onUseClipboardSuggestion,
-                    onQualitySelected = viewModel::onQualitySelected,
-                    onDownload = viewModel::onDownloadClicked,
-                    onCancel = viewModel::onCancelClicked,
-                    onRetry = viewModel::onRetry,
-                    onDismissResult = viewModel::onDismissResult,
-                )
+                statusState.message?.let { message ->
+                    LaunchedEffect(message) {
+                        snackbarHost.showSnackbar(message)
+                        statusViewModel.onMessageShown()
+                    }
+                }
+
+                // The tab row is now the topmost element, so it owns the status bar
+                // inset. Screens below it consume none of their own top inset.
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .statusBarsPadding(),
+                ) {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = { Text(stringResource(R.string.tab_download)) },
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = { Text(stringResource(R.string.tab_status)) },
+                        )
+                    }
+
+                    when (selectedTab) {
+                        0 -> HomeScreen(
+                            state = homeState,
+                            onUrlChanged = viewModel::onUrlChanged,
+                            onFetch = viewModel::onFetchClicked,
+                            onPasteAndFetch = viewModel::onPasteAndFetch,
+                            onUseClipboardSuggestion = viewModel::onUseClipboardSuggestion,
+                            onQualitySelected = viewModel::onQualitySelected,
+                            onDownload = viewModel::onDownloadClicked,
+                            onCancel = viewModel::onCancelClicked,
+                            onRetry = viewModel::onRetry,
+                            onDismissResult = viewModel::onDismissResult,
+                        )
+
+                        else -> Scaffold(
+                            snackbarHost = { SnackbarHost(snackbarHost) },
+                        ) { padding ->
+                            StatusScreen(
+                                state = statusState,
+                                onGrantAccess = {
+                                    statusFolderAccess.launch(statusViewModel.initialFolderUri())
+                                },
+                                onSave = statusViewModel::onSaveClicked,
+                                modifier = Modifier.padding(padding),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

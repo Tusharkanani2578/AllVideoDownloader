@@ -14,7 +14,6 @@
     <string name="label_downloading">Downloading</string>
     <string name="label_preparing">Preparing…</string>
     <string name="label_download_complete">Download complete</string>
-    <string name="label_saved_to_gallery">Saved to your gallery as %1$s</string>
 
     <string name="action_paste">Paste</string>
     <string name="action_fetch">Fetch video</string>
@@ -29,6 +28,16 @@
 
     <string name="empty_title">Paste a video link to begin</string>
     <string name="empty_subtitle">Copy a link, then come back — it will be picked up automatically.</string>
+
+    <string name="tab_download">Download</string>
+    <string name="tab_status">Status</string>
+    <string name="status_access_title">Let the app see your WhatsApp statuses</string>
+    <string name="status_access_body">A status isn\'t a link — WhatsApp saves it to a folder on your phone when you view it, and clears it after a day. Grant access to that folder once and every status you\'ve viewed will show up here.</string>
+    <string name="status_access_action">Choose folder</string>
+    <string name="status_empty_title">No statuses right now</string>
+    <string name="status_empty_body">View a few statuses in WhatsApp, then come back — they\'ll appear here for 24 hours.</string>
+    <string name="status_saved">Saved</string>
+    <string name="action_save">Save</string>
 
     <string name="notification_downloading">Downloading video</string>
     <string name="notification_channel_downloads">Downloads</string>

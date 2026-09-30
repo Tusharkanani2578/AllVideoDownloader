@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -124,6 +125,9 @@ fun HomeScreen(
     }
 
     Scaffold(
+        // The tab row above already applies the status bar inset; the action bar applies
+        // its own navigation bar padding. Applying either again here would double it.
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = {

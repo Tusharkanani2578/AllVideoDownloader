@@ -9,6 +9,7 @@ import com.tushar.videodownloader.resolver.DirectUrlResolver
 import com.tushar.videodownloader.resolver.FacebookResolver
 import com.tushar.videodownloader.resolver.InstagramResolver
 import com.tushar.videodownloader.resolver.ResolverRegistry
+import com.tushar.videodownloader.status.StatusRepository
 import java.io.File
 
 /**
@@ -42,6 +43,11 @@ object ServiceLocator {
     }
 
     fun networkMonitor(context: Context) = NetworkMonitor(context.applicationContext)
+
+    fun statusRepository(context: Context): StatusRepository {
+        val appContext = context.applicationContext
+        return StatusRepository(appContext, MediaStoreSaver(appContext))
+    }
 
     /** Partials live in cache so the OS can reclaim them under storage pressure. */
     private fun partialsDir(context: Context): File =
