@@ -162,7 +162,7 @@ every `when` being updated.
 | Insufficient storage | Checked before starting against the resolved size plus a 50 MB headroom, then re-checked once the real `Content-Length` is known. `ENOSPC` mid-write maps to the same error |
 | User cancels | Cancellation propagates through the coroutine to the read loop. The partial file is deliberately kept so the download can resume later |
 | Very large video | Streamed through a 64 KB buffer — memory use is constant regardless of file size. Progress is throttled to 5 updates/sec so the UI is not flooded |
-| Duplicate download | The file name is deterministic per (source URL, quality); MediaStore is queried for it before any bandwidth is spent → `AlreadyDownloaded` |
+| Duplicate download | The file name is deterministic per (source URL, quality); MediaStore is queried for it before any bandwidth is spent → `AlreadyDownloaded`. The query sees only rows this app owns, which is what scoped storage grants without a read-media permission — see the limitation below |
 | App goes to background | The transfer runs in a foreground service with a cancellable notification, independent of the Activity and the ViewModel |
 | Multiple qualities | `ResolvedMedia` carries a rendition list and the UI renders a chip per entry, defaulting to the highest. Facebook supplies HD and SD; a source with one rendition is labelled by its real height rather than padded with resolutions it cannot serve |
 | Requires authentication | Story and private links → `AuthenticationRequired`. No bypass is attempted |
@@ -186,10 +186,13 @@ Pure-JVM unit tests cover the logic worth protecting from regression:
 - `OpenGraphParserTest` — both attribute orders, both quote styles, named and numeric entities
 - `FileNamingTest` — determinism, collision resistance across sources, illegal-character stripping
 - `FormattingTest` — size and speed boundaries
+- `DirectUrlResolverTest` — against `MockWebServer`: `401`/`403` read as sign-in rather than a server fault, other statuses pass their code through, a `.mp4` path answering with HTML is refused, absent `Content-Length`, unreachable host
+- `HttpClientProviderTest` — the default agent is applied where none is set, never over one the caller chose, and survives a redirect
 
-`Downloader` and the resolvers are constructor-injected; the next layer of coverage is
-`MockWebServer`, exercising redirect, `206`, truncated-body and `401` paths without
-touching a real network.
+The platform resolvers address their own host by design, so they are covered at the
+parser level rather than through a mock server. `Downloader` publishes through
+`MediaStoreSaver`, which needs a `Context`; covering its resume and truncated-body paths
+means giving that class an interface, which is the next thing worth doing.
 
 ---
 
@@ -202,6 +205,12 @@ touching a real network.
   degrades to a preview with an explanation, never a crash.
 - A WhatsApp status is listed only once it has been viewed, and only for the 24 hours
   WhatsApp keeps its local copy. Nothing older is recoverable.
+- Duplicate detection does not survive reinstalling the app. Android clears MediaStore
+  ownership of an app's rows when it is uninstalled, and a scoped-storage query returns
+  only owned rows, so files saved by an earlier install are invisible to it and
+  re-saving one produces a second copy named "… (1)". Holding the row ownership would
+  mean asking for a read-media permission over the user's whole gallery, which is far
+  more than duplicate detection is worth; nothing is lost either way.
 - One download at a time. A queue is a natural extension and the service is already the
   right place for it.
 - Resume survives a retry within the session; partials live in `cacheDir`, so the OS may

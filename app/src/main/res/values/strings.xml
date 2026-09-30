@@ -30,7 +30,7 @@
     <string name="empty_subtitle">Copy a link, then come back — it will be picked up automatically.</string>
 
     <string name="tab_download">Download</string>
-    <string name="tab_status">Status</string>
+    <string name="tab_status">WhatsApp Status</string>
     <string name="status_access_title">Let the app see your WhatsApp statuses</string>
     <string name="status_access_body">A status isn\'t a link — WhatsApp saves it to a folder on your phone when you view it, and clears it after a day. Grant access to that folder once and every status you\'ve viewed will show up here.</string>
     <string name="status_access_action">Choose folder</string>
