@@ -13,17 +13,17 @@ sealed class DownloadError(val userMessage: String) {
         DownloadError("Links from $host aren't supported yet.")
 
     data object NoMediaFound :
-        DownloadError("No downloadable video was found at this link.")
+        DownloadError("Nothing downloadable was found at this link.")
 
-    /** The post is public and previewable, but the platform withholds the video itself. */
+    /** The post is public and previewable, but the platform withholds the media itself. */
     data class NoPublicMedia(val platformName: String) :
         DownloadError(
-            "$platformName doesn't make this video available to download without " +
+            "$platformName doesn't make this post available to download without " +
                 "signing in, so only its preview could be loaded."
         )
 
     data object AuthenticationRequired :
-        DownloadError("This video is private or requires sign-in, so it can't be downloaded.")
+        DownloadError("This post is private or requires sign-in, so it can't be downloaded.")
 
     data object NoNetwork :
         DownloadError("You're offline. Check your connection and try again.")
