@@ -26,14 +26,15 @@ Unit tests: `./gradlew test`
 
 | Source | Status | How |
 |---|---|---|
-| Public Instagram reel / video post | **Downloads** | Reads `video_url` from Instagram's public `/embed/` page |
+| Public Instagram reel / video post | **Downloads** | Reads the rendition list off the public post page, falling back to the `/embed/` page |
 | Public Instagram photo post | **Downloads** | Full-resolution image from the `/embed/captioned/` page |
 | Public Facebook video / reel / share link | **Downloads** | Reads `hd_src` and `sd_src` from Facebook's `plugins/video.php` embed — two real quality options |
-| Public Facebook photo post | **Downloads** | `og:image` on the canonical page, which Facebook serves at up to 1152×2048 |
+| Public Facebook photo post | **Downloads** | `og:image` on the canonical page, which Facebook serves at up to 1152×2048. Album photos need a second pass — see below |
 | Direct video URL (`.mp4`, `.webm`, …) | **Downloads** | `HEAD` for size, then a ranged `GET` |
 | Link shared over WhatsApp | **Downloads** | A shared video link is an ordinary URL — same path as above |
 | Instagram story | **Refused** | Bound to a signed-in viewer; no public surface serves it |
 | Private / friends-only post | **Refused** | Reported as "requires sign-in" |
+| WhatsApp status you have viewed | **Downloads** | Read from WhatsApp's own `.Statuses` folder, which the user grants access to once |
 | WhatsApp's own media URLs | **Not reachable by pasting** | Encrypted CDN blobs whose keys live in the message — there is nothing a user can paste |
 
 Photo posts are supported because the brief asks for a public Instagram **post** to be
@@ -52,14 +53,20 @@ embed publishes HD and SD, where Instagram's exposes a single rendition.
 The brief requires respecting each platform's terms and authentication requirements, and
 forbids bypassing protection on private content. That rules out what general-purpose
 downloaders do — replaying a signed-in session or calling an internal API. This app
-reads only what the platforms publish to unauthenticated clients, through the embed
-endpoints they provide for third-party sites.
+reads only what the platforms publish to unauthenticated clients — their public post
+pages and the embed endpoints they provide for third-party sites.
 
-**Instagram.** The post page carries preview metadata but no media URL; the `/embed/`
-page carries `video_url`. Instagram serves two embed variants by user agent, and only
-the static one (requested with a plain WebKit UA) includes it. Photo posts take their
-full-resolution image from `/embed/captioned/` — `og:image` is a 640px square crop. CDN
-URLs are used exactly as published; their signature covers every parameter.
+**Instagram.** The post page is read first, requested the way a browser navigates —
+current Chrome agent plus the `Sec-Fetch-*` headers — since anything else gets a thinner
+page. Instagram does not use one field name for the video, so every shape it publishes
+under is tried widest-first: `video_versions`, the single-URL fields, then `og:video`.
+Matching only one is why a public reel can fail to resolve.
+
+The `/embed/` page is tried after it. It resolves fewer posts but carries a photo post's
+full-size image via `/embed/captioned/`, where `og:image` is a 640px square crop. The two
+pages want opposite agents: the embed inlines `video_url` only for a plain WebKit agent.
+CDN URLs are used exactly as published — their signature covers every parameter, so
+editing one returns `403`.
 
 **Facebook.** `plugins/video.php` exposes `hd_src` and `sd_src` for public videos, which
 become the HD and SD options. Photo posts fall through to the canonical page's
@@ -68,9 +75,31 @@ as a photo, so a gated video reports sign-in rather than silently saving its pos
 frame. `/share/...` links resolve to their canonical URL first, keeping the query when
 it lands on a `.php` endpoint — `story.php` is meaningless without `story_fbid`.
 
+Album photos (`photo.php`) are the exception: their page is an empty JavaScript shell
+unless the request comes from a link-preview crawler Facebook allowlists by name, and no
+self-identifying agent qualifies. The photo path therefore retries once as one of those
+crawlers — the app claims an identity that is not its own, stated plainly here because
+it is a deliberate call. Photo posts only, only after the ordinary agent found nothing,
+and the `og:video` check repeats on the retry so a gated video is still never saved as
+its poster frame.
+
 Where nothing public is available — private accounts, stories, age-gated posts — the app
 shows whatever preview it could read and says the media is not publicly available. It
 never attempts an authenticated path.
+
+---
+
+## WhatsApp status
+
+A status has no shareable link — the media is an encrypted CDN blob whose key travels
+inside the message. What it does have is a local copy: viewing a status writes it to
+WhatsApp's own folder, where it stays for 24 hours.
+
+The **Status** tab lists what is there and saves a copy to the gallery on a tap. Access
+is through `ACTION_OPEN_DOCUMENT_TREE`: the user picks the folder once, the grant is
+persisted, and nothing else on the device becomes readable. `Android/media/...` sits
+outside the scoped-storage sandbox and no broad-storage permission covers it, so SAF is
+the only route — and it leaves the choice with the user.
 
 ---
 
@@ -80,14 +109,16 @@ never attempts an authenticated path.
 ui/            HomeScreen (stateless Compose)  ·  HomeViewModel  ·  HomeUiState
                      │ intent                              ▲ state
                      ▼                                     │
-resolver/      ResolverRegistry → MediaResolver ──┬── InstagramResolver ─┬─ InstagramEmbedParser
-                                                  │                     └─ OpenGraphResolver
+resolver/      ResolverRegistry → MediaResolver ──┬── InstagramResolver ─┬─ InstagramPageParser
+                                                  │                      ├─ InstagramEmbedParser
+                                                  │                      └─ OpenGraphResolver
                                                   ├── FacebookResolver  ─┬─ FacebookEmbedParser
                                                   │                      └─ OpenGraphResolver
                                                   └── DirectUrlResolver
                      │ ResolvedMedia
                      ▼
 download/      DownloadService (foreground) → Downloader → MediaStoreSaver
+status/        StatusScreen · StatusViewModel → StatusRepository (SAF) → MediaStoreSaver
 core/          DownloadError · UrlValidator · formatting
 network/       HttpClientProvider · NetworkMonitor
 ```
@@ -149,6 +180,7 @@ Two further cases the brief did not list, but that occur in practice:
 Pure-JVM unit tests cover the logic worth protecting from regression:
 
 - `UrlValidatorTest` — share-text extraction, trailing punctuation, hosts without a dot, non-HTTP schemes
+- `InstagramPageParserTest` — field preference order, every known video field, single/double JSON escaping, `\uXXXX` ampersands, non-URL matches, absent video
 - `InstagramEmbedParserTest` — single/double JSON escaping, `\uXXXX` ampersands, absent video, photo-vs-video detection, full-size image extraction
 - `FacebookEmbedParserTest` — HD/SD ordering, unescaping, SD-only sources, login walls
 - `OpenGraphParserTest` — both attribute orders, both quote styles, named and numeric entities
@@ -163,10 +195,13 @@ touching a real network.
 
 ## Known limitations
 
-- Instagram and Facebook are resolved through the platforms' public embed endpoints.
-  Those are served anonymously and built for third-party embedding, but their inline
-  JSON is undocumented, so coverage per post is at the platforms' discretion and can
-  change. The app degrades to a preview with an explanation, never a crash.
+- Instagram and Facebook are resolved from the pages those platforms serve anonymously,
+  whose inline JSON is undocumented — so coverage per post is at the platforms'
+  discretion and can change. Some public reels serve nothing to a signed-out client on
+  any surface; those are reported as needing sign-in, which is what they are. The app
+  degrades to a preview with an explanation, never a crash.
+- A WhatsApp status is listed only once it has been viewed, and only for the 24 hours
+  WhatsApp keeps its local copy. Nothing older is recoverable.
 - One download at a time. A queue is a natural extension and the service is already the
   right place for it.
 - Resume survives a retry within the session; partials live in `cacheDir`, so the OS may
