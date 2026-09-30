@@ -2,6 +2,7 @@ package com.tushar.videodownloader.status
 
 import android.app.Application
 import android.net.Uri
+import com.tushar.videodownloader.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tushar.videodownloader.ServiceLocator
@@ -43,9 +44,7 @@ class StatusViewModel(application: Application) : AndroidViewModel(application) 
         runCatching { repository.onAccessGranted(treeUri) }
             .onSuccess { refresh() }
             .onFailure {
-                _uiState.update { state ->
-                    state.copy(message = "Couldn't keep access to that folder. Please try again.")
-                }
+                _uiState.update { state -> state.copy(message = string(R.string.status_access_failed)) }
             }
     }
 
@@ -60,15 +59,18 @@ class StatusViewModel(application: Application) : AndroidViewModel(application) 
                         it.copy(
                             savingUri = null,
                             savedNames = it.savedNames + item.name,
-                            message = "Saved to your gallery as $savedName",
+                            message = string(R.string.status_save_success, savedName),
                         )
                     }
                 }
-                .onFailure { error ->
+                .onFailure {
+                    // Deliberately not the exception's own text: the download path routes
+                    // every failure through DownloadError so a raw IO message never reaches
+                    // the screen, and this path should read no differently.
                     _uiState.update {
                         it.copy(
                             savingUri = null,
-                            message = "Couldn't save ${item.name}. ${error.message.orEmpty()}".trim(),
+                            message = string(R.string.status_save_failed, item.name),
                         )
                     }
                 }
@@ -78,4 +80,7 @@ class StatusViewModel(application: Application) : AndroidViewModel(application) 
     fun onMessageShown() {
         _uiState.update { it.copy(message = null) }
     }
+
+    private fun string(resId: Int, vararg args: Any): String =
+        getApplication<Application>().getString(resId, *args)
 }

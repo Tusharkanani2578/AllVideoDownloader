@@ -100,6 +100,11 @@ class StatusRepository(
      *
      * The document is streamed through a temp file so the existing MediaStore publisher
      * can be reused unchanged — the same code path a downloaded video takes.
+     *
+     * The temp file is removed on every path. [MediaStoreSaver.publish] deletes it once
+     * the copy lands but deliberately keeps it on failure, so an interrupted download can
+     * resume from it. Nothing is resumable here — the source is a local file — so a failed
+     * save would otherwise leave a full copy of the status sitting in the cache.
      */
     suspend fun save(item: StatusItem): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
@@ -110,12 +115,16 @@ class StatusRepository(
             }
 
             val temp = File(context.cacheDir, "status_${item.name}")
-            context.contentResolver.openInputStream(item.uri)?.use { input ->
-                temp.outputStream().use { output -> input.copyTo(output) }
-            } ?: error("Could not read ${item.name}")
+            try {
+                context.contentResolver.openInputStream(item.uri)?.use { input ->
+                    temp.outputStream().use { output -> input.copyTo(output) }
+                } ?: error("Could not read ${item.name}")
 
-            mediaStoreSaver.publish(temp, fileName, item.kind)
-            fileName
+                mediaStoreSaver.publish(temp, fileName, item.kind)
+                fileName
+            } finally {
+                temp.delete()
+            }
         }
     }
 

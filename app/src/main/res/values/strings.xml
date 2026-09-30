@@ -37,6 +37,9 @@
     <string name="status_empty_title">No statuses right now</string>
     <string name="status_empty_body">View a few statuses in WhatsApp, then come back — they\'ll appear here for 24 hours.</string>
     <string name="status_saved">Saved</string>
+    <string name="status_save_success">Saved to your gallery as %1$s</string>
+    <string name="status_save_failed">Couldn\'t save %1$s. Please try again.</string>
+    <string name="status_access_failed">Couldn\'t keep access to that folder. Please try again.</string>
     <string name="action_save">Save</string>
 
     <string name="notification_downloading">Downloading video</string>
