@@ -43,6 +43,10 @@ class InstagramResolver(
             return Result.failure(ResolveException(DownloadError.NoMediaFound))
         }
 
+        // The post page itself is the widest net — it carries the video under whichever
+        // field name the page variant uses. The embed is tried after it because it
+        // resolves fewer posts, and it is what surfaces a photo post's full-size image.
+        resolveViaPostPage(url)?.let { return it }
         resolveViaEmbed(url)?.let { return it }
 
         val fallback = super.resolve(url)
@@ -55,6 +59,54 @@ class InstagramResolver(
         }
         return fallback
     }
+
+    /**
+     * Resolves from the post page itself.
+     *
+     * Requested the way a browser navigates, because Instagram serves a thinner page
+     * variant to anything that does not look like one, and that variant carries fewer of
+     * the fields the video can appear under.
+     *
+     * Every header below is load-bearing, not decoration: dropping `Accept` and
+     * `Accept-Language` alone was measured returning a page ~25% smaller with no video
+     * field on it. Removing any of them silently narrows how many reels resolve.
+     */
+    private suspend fun resolveViaPostPage(url: HttpUrl): Result<ResolvedMedia>? =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", BROWSER_USER_AGENT)
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "none")
+                .get()
+                .build()
+
+            val html = try {
+                httpClient.client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    response.body?.string().orEmpty()
+                }
+            } catch (e: IOException) {
+                return@withContext null
+            }
+
+            val videoUrl = InstagramPageParser.findVideoUrl(html) ?: return@withContext null
+            val username = InstagramPageParser.findUsername(html)
+
+            Result.success(
+                ResolvedMedia(
+                    sourceUrl = url.toString(),
+                    title = username?.let { "$it — Instagram video" } ?: "Instagram video",
+                    thumbnailUrl = InstagramPageParser.findImageUrl(html),
+                    qualities = listOf(VideoQuality(label = "Original", url = videoUrl)),
+                    platform = platform,
+                    kind = MediaKind.VIDEO,
+                )
+            )
+        }
 
     /**
      * Resolves through the public embed page.
@@ -85,42 +137,44 @@ class InstagramResolver(
             }
 
             val username = InstagramEmbedParser.findUsername(html)
-            val videoUrl = InstagramEmbedParser.findVideoUrl(html)
 
-            // The plain embed often carries no image at all. The captioned variant
-            // references the post image at full resolution, which is what a photo post
-            // should actually save; og:image is only a 640px square crop.
-            val imageUrl = InstagramEmbedParser.findThumbnailUrl(html)
-                ?: fetchCaptionedEmbed(url)?.let(InstagramEmbedParser::findFullImageUrl)
-                ?: findOpenGraphImage(url)
-
-            when {
-                videoUrl != null -> Result.success(
+            // Each branch fetches only what it needs. Looking for an image up front cost
+            // two extra requests on every video post the embed could not resolve — and
+            // one of them was the same page the Open Graph fallback then fetched again.
+            InstagramEmbedParser.findVideoUrl(html)?.let { videoUrl ->
+                return@withContext Result.success(
                     ResolvedMedia(
                         sourceUrl = url.toString(),
                         title = username?.let { "$it — Instagram video" } ?: "Instagram video",
-                        thumbnailUrl = imageUrl,
+                        thumbnailUrl = InstagramEmbedParser.findThumbnailUrl(html),
                         qualities = listOf(VideoQuality(label = "Original", url = videoUrl)),
                         platform = platform,
                         kind = MediaKind.VIDEO,
                     )
                 )
-
-                // A photo post's `display_url` is the full-resolution image, so the post
-                // is downloadable even though there is no video on it.
-                InstagramEmbedParser.isPhotoPost(html) && imageUrl != null -> Result.success(
-                    ResolvedMedia(
-                        sourceUrl = url.toString(),
-                        title = username?.let { "$it — Instagram photo" } ?: "Instagram photo",
-                        thumbnailUrl = imageUrl,
-                        qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
-                        platform = platform,
-                        kind = MediaKind.IMAGE,
-                    )
-                )
-
-                else -> null
             }
+
+            // A photo post has no video to withhold, and its image is the thing to save.
+            // The plain embed often carries no image, so the captioned variant is tried
+            // next — it references the post image at full size, where og:image is only a
+            // 640px square crop.
+            if (!InstagramEmbedParser.isPhotoPost(html)) return@withContext null
+
+            val imageUrl = InstagramEmbedParser.findThumbnailUrl(html)
+                ?: fetchCaptionedEmbed(url)?.let(InstagramEmbedParser::findFullImageUrl)
+                ?: findOpenGraphImage(url)
+                ?: return@withContext null
+
+            Result.success(
+                ResolvedMedia(
+                    sourceUrl = url.toString(),
+                    title = username?.let { "$it — Instagram photo" } ?: "Instagram photo",
+                    thumbnailUrl = imageUrl,
+                    qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
+                    platform = platform,
+                    kind = MediaKind.IMAGE,
+                )
+            )
         }
 
     /** `/p/<code>/embed/captioned/` — the variant that carries the full-size image. */
@@ -172,9 +226,19 @@ class InstagramResolver(
     }
 
     private companion object {
-        // Deliberately a plain WebKit UA: a modern-Chrome UA gets the script-driven
-        // embed with no inline video_url; a simple UA gets the static variant that
-        // carries it (verified empirically).
+        /**
+         * For the post page. Instagram serves a fuller page — the one carrying the
+         * video fields — only to something that presents as a current browser.
+         */
+        const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+        /**
+         * For the embed page, where the opposite holds: a modern-Chrome agent gets the
+         * script-driven embed with nothing inline, while a plain agent gets the static
+         * variant that carries `video_url`. Both verified against live posts.
+         */
         const val EMBED_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
 }

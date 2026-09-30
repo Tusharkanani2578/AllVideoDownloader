@@ -25,26 +25,4 @@ internal object OpenGraphParser {
         return raw.unescapeHtmlEntities().takeIf { it.isNotBlank() }
     }
 
-    private val NUMERIC_ENTITY = Regex("""&#(x?)([0-9a-fA-F]+);""")
-
-    // Non-Latin titles (Hindi, emoji) arrive entirely as numeric entities.
-    private fun String.unescapeHtmlEntities(): String {
-        val named = replace("&amp;", "&")
-            .replace("&quot;", "\"")
-            .replace("&#039;", "'")
-            .replace("&apos;", "'")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&nbsp;", " ")
-
-        return NUMERIC_ENTITY.replace(named) { match ->
-            val (prefix, digits) = match.destructured
-            val codePoint = digits.toIntOrNull(if (prefix == "x") 16 else 10)
-            if (codePoint != null && codePoint in 1..0x10FFFF) {
-                String(Character.toChars(codePoint))
-            } else {
-                match.value
-            }
-        }
-    }
 }
