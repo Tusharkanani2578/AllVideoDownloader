@@ -78,6 +78,9 @@ internal object InstagramPageParser {
                 url = url,
                 heightPx = ORIGINAL_HEIGHT.find(item)?.groupValues?.get(1)?.toIntOrNull() ?: 0,
                 kind = if (isVideo) MediaKind.VIDEO else MediaKind.IMAGE_WEBP,
+                // The 640px crop, which is the right size for a tile and saves pulling
+                // the full-resolution image just to draw one.
+                thumbnailUrl = match(item, DISPLAY_URI) ?: match(item, CANDIDATE_URL),
             )
         }
 

@@ -61,28 +61,66 @@ class DownloadService : Service() {
         if (downloadJob?.isActive == true) return
 
         val media = pendingMedia
-        val option = pendingQuality
-        if (media == null || option == null) {
+        val options = pendingOptions
+        if (media == null || options.isEmpty()) {
             stopSelf()
             return
         }
 
         startForeground(NOTIFICATION_ID, buildNotification("Starting download…", null))
 
-        downloadJob = serviceScope.launch {
+        downloadJob = serviceScope.launch { runBatch(media, options) }
+    }
+
+    /**
+     * Downloads the chosen items one after another.
+     *
+     * Sequential rather than parallel: the user is watching one progress bar, and three
+     * downloads sharing the connection would each finish later than the first would have
+     * alone. A failure stops the batch and is reported as it is — whatever already landed
+     * stays saved, and retrying skips it, since the duplicate check runs before any bytes
+     * are fetched.
+     */
+    private suspend fun runBatch(media: ResolvedMedia, options: List<MediaOption>) {
+        var saved = 0
+        var last: DownloadProgress.Completed? = null
+
+        options.forEachIndexed { index, option ->
+            var failed = false
+
             ServiceLocator.downloader(applicationContext)
                 .download(media, option)
                 .collect { update ->
-                    _progress.value = update
                     when (update) {
-                        is DownloadProgress.Running -> updateNotification(update)
-                        is DownloadProgress.Completed,
-                        is DownloadProgress.Failed,
-                        -> finish()
-                        DownloadProgress.Preparing -> Unit
+                        is DownloadProgress.Running -> {
+                            val positioned = update.copy(
+                                itemNumber = index + 1,
+                                itemCount = options.size,
+                            )
+                            _progress.value = positioned
+                            updateNotification(positioned)
+                        }
+                        is DownloadProgress.Completed -> {
+                            saved++
+                            last = update
+                        }
+                        is DownloadProgress.Failed -> {
+                            failed = true
+                            _progress.value = update
+                        }
+                        DownloadProgress.Preparing ->
+                            if (index == 0) _progress.value = update
                     }
                 }
+
+            if (failed) {
+                finish()
+                return
+            }
         }
+
+        last?.let { _progress.value = it.copy(savedCount = saved) }
+        finish()
     }
 
     private fun cancelDownload() {
@@ -98,6 +136,9 @@ class DownloadService : Service() {
 
     private fun updateNotification(progress: DownloadProgress.Running) {
         val text = buildString {
+            if (progress.itemCount > 1) {
+                append("${progress.itemNumber} of ${progress.itemCount} · ")
+            }
             append(progress.bytesDownloaded.toReadableSize())
             progress.totalBytes?.let { append(" of ${it.toReadableSize()}") }
         }
@@ -162,11 +203,11 @@ class DownloadService : Service() {
         // Handed over in memory: the service is process-local and ResolvedMedia is a
         // rich model, so Intent-extra serialisation buys nothing.
         private var pendingMedia: ResolvedMedia? = null
-        private var pendingQuality: MediaOption? = null
+        private var pendingOptions: List<MediaOption> = emptyList()
 
-        fun start(context: Context, media: ResolvedMedia, option: MediaOption) {
+        fun start(context: Context, media: ResolvedMedia, options: List<MediaOption>) {
             pendingMedia = media
-            pendingQuality = option
+            pendingOptions = options
             _progress.value = DownloadProgress.Preparing
 
             val intent = Intent(context, DownloadService::class.java).setAction(ACTION_START)
@@ -182,7 +223,7 @@ class DownloadService : Service() {
         fun clear() {
             _progress.value = null
             pendingMedia = null
-            pendingQuality = null
+            pendingOptions = emptyList()
         }
     }
 }

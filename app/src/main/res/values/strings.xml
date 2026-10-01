@@ -19,6 +19,10 @@
     <string name="label_downloading">Downloading</string>
     <string name="label_preparing">Preparing…</string>
     <string name="label_download_complete">Download complete</string>
+    <plurals name="saved_count">
+        <item quantity="one">%1$d item saved</item>
+        <item quantity="other">%1$d items saved</item>
+    </plurals>
 
     <string name="action_paste">Paste</string>
     <string name="action_fetch">Fetch video</string>
@@ -46,6 +50,7 @@
     <string name="status_save_failed">Couldn\'t save %1$s. Please try again.</string>
     <string name="status_access_failed">Couldn\'t keep access to that folder. Please try again.</string>
     <string name="action_save">Save</string>
+    <string name="action_save_all">All</string>
 
     <string name="notification_downloading">Downloading video</string>
     <string name="notification_channel_downloads">Downloads</string>

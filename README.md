@@ -28,7 +28,7 @@ Unit tests: `./gradlew test`
 |---|---|---|
 | Public Instagram reel / video post | **Downloads** | Reads the rendition list off the public post page, falling back to the `/embed/` page |
 | Public Instagram photo post | **Downloads** | Full-resolution image from the `/embed/captioned/` page |
-| Public Instagram carousel | **Downloads** | Every slide read from `carousel_media`, each selectable; the link's `img_index` picks which one opens |
+| Public Instagram carousel | **Downloads** | Every slide read from `carousel_media` and shown as its own thumbnail; the link's `img_index` picks which one opens, and one tap takes the whole post |
 | Public Facebook video / reel / share link | **Downloads** | Reads `hd_src` and `sd_src` from Facebook's `plugins/video.php` embed — two real quality options |
 | Public Facebook photo post | **Downloads** | `og:image` on the canonical page, which Facebook serves at up to 1152×2048. Album photos need a second pass — see below |
 | Direct video URL (`.mp4`, `.webm`, …) | **Downloads** | `HEAD` for size, then a ranged `GET` |
@@ -67,7 +67,9 @@ A carousel is checked before any of that, because its page also carries an `og:i
 and looking for a single piece of media would resolve the cover and quietly save that
 instead of the slides. Each slide becomes its own entry — a carousel is several separate
 things to save, not several renditions of one — and the `img_index` the share link
-carries decides which opens. Their full resolution lives in `image_versions2` (the
+carries decides which opens. The picker shows the slides themselves rather than numbered
+chips, since a number says nothing about which photo it is, and offers the whole post in
+one tap, which is what saving a carousel usually means. Their full resolution lives in `image_versions2` (the
 `display_uri` beside it is a 640px crop) and is served as WebP, which is saved as WebP:
 the CDN will not re-encode, so naming it `.jpg` would be a lie about the bytes.
 
@@ -175,6 +177,7 @@ every `when` being updated.
 | App goes to background | The transfer runs in a foreground service with a cancellable notification, independent of the Activity and the ViewModel |
 | Multiple qualities | `ResolvedMedia` carries a list of options and the UI renders a chip per entry, defaulting to the highest. Facebook supplies HD and SD; a source with one rendition is labelled by its real height rather than padded with resolutions it cannot serve |
 | Multiple items in one post | The same list holds a carousel's slides, with `OptionKind` saying which it is so the screen offers "Select what to save" rather than claiming they are qualities. Each slide carries its own `MediaKind`, so a carousel mixing photos and videos saves each as what it is |
+| Saving a whole post | `Selection` is one slide or all of them — one type rather than an option plus a flag, so the two can never disagree. The service downloads a batch in order, one at a time: the user watches a single progress bar, and parallel transfers sharing the connection would each finish later than the first would alone. A failure stops the batch and is reported as it is; whatever landed stays saved, and retrying skips it because the duplicate check runs before any bytes are fetched |
 | Requires authentication | Story and private links → `AuthenticationRequired`. No bypass is attempted |
 
 Two further cases the brief did not list, but that occur in practice:
@@ -190,6 +193,7 @@ Two further cases the brief did not list, but that occur in practice:
 Pure-JVM unit tests cover the logic worth protecting from regression:
 
 - `UrlValidatorTest` — share-text extraction, trailing punctuation, hosts without a dot, non-HTTP schemes
+- `SelectionTest` — one slide downloads only itself, "all" downloads every slide in order, the link's slide is what opens, each slide keeps its own thumbnail
 - `InstagramCarouselTest` — slide order, full resolution preferred over the display crop, per-slide kind, brace matching stopping at the end of the carousel, `img_index` selection
 - `InstagramPageParserTest` — field preference order, every known video field, single/double JSON escaping, `\uXXXX` ampersands, non-URL matches, absent video
 - `InstagramEmbedParserTest` — single/double JSON escaping, `\uXXXX` ampersands, absent video, photo-vs-video detection, full-size image extraction

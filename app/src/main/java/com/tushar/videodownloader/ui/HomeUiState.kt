@@ -7,6 +7,17 @@ import com.tushar.videodownloader.resolver.ResolvedMedia
 import com.tushar.videodownloader.resolver.MediaOption
 
 /**
+ * What the user has chosen to download.
+ *
+ * One type rather than an option plus an "all" flag, because the two could disagree and
+ * this state exists so that cannot happen.
+ */
+sealed interface Selection {
+    data class One(val option: MediaOption) : Selection
+    data object All : Selection
+}
+
+/**
  * Everything the home screen renders, in one immutable snapshot — so the UI can never
  * show two contradictory things at once.
  */
@@ -16,7 +27,7 @@ data class HomeUiState(
     val media: ResolvedMedia? = null,
     /** Metadata for a link that resolved but has no downloadable video. */
     val preview: MediaPreview? = null,
-    val selectedOption: MediaOption? = null,
+    val selection: Selection? = null,
     val download: DownloadProgress? = null,
     val error: DownloadError? = null,
     val clipboardSuggestion: String? = null,

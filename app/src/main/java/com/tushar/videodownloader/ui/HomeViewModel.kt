@@ -128,7 +128,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             stage = HomeUiState.Stage.Resolved,
                             media = media,
                             preview = null,
-                            selectedOption = media.defaultOption,
+                            selection = Selection.One(media.defaultOption),
                             error = null,
                         )
                     }
@@ -191,16 +191,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         onFetchClicked()
     }
 
-    fun onOptionSelected(option: MediaOption) {
-        _uiState.update { it.copy(selectedOption = option, error = null) }
+    fun onSelect(selection: Selection) {
+        _uiState.update { it.copy(selection = selection, error = null) }
     }
 
     fun onDownloadClicked() {
         val state = _uiState.value
         val media = state.media ?: return
-        val option = state.selectedOption ?: return
 
-        DownloadService.start(getApplication(), media, option)
+        val chosen = when (val selection = state.selection) {
+            is Selection.One -> listOf(selection.option)
+            Selection.All -> media.options
+            null -> return
+        }
+        DownloadService.start(getApplication(), media, chosen)
     }
 
     fun onCancelClicked() {
@@ -215,7 +219,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 stage = HomeUiState.Stage.Idle,
                 media = null,
                 preview = null,
-                selectedOption = null,
+                selection = null,
                 download = null,
                 error = null,
                 clipboardSuggestion = null,

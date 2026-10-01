@@ -10,6 +10,9 @@ package com.tushar.videodownloader.resolver
  * @param kind what this option is, where it differs from the post's own kind. A carousel
  *   can hold photos and videos side by side and each is saved as what it is; null means
  *   the option is the same kind as the post.
+ * @param thumbnailUrl a picture of this option, where it has one of its own. Renditions
+ *   of one video share the post's thumbnail and leave this null; a carousel's slides are
+ *   different pictures, and showing them is the only way to pick one on sight.
  */
 data class MediaOption(
     val label: String,
@@ -17,6 +20,7 @@ data class MediaOption(
     val sizeBytes: Long? = null,
     val heightPx: Int = 0,
     val kind: MediaKind? = null,
+    val thumbnailUrl: String? = null,
 )
 
 /**

@@ -7,6 +7,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,6 +87,11 @@ import com.tushar.videodownloader.resolver.MediaOption
 
 private val CardShape = RoundedCornerShape(20.dp)
 
+private val TileShape = RoundedCornerShape(12.dp)
+
+/** Keeps a slide's number legible over whatever the picture behind it happens to be. */
+private val ScrimColor = Color.Black.copy(alpha = 0.55f)
+
 /**
  * Widest the content is allowed to get.
  *
@@ -105,7 +115,7 @@ fun HomeScreen(
     onFetch: () -> Unit,
     onPasteAndFetch: (String?) -> Unit,
     onUseClipboardSuggestion: () -> Unit,
-    onOptionSelected: (MediaOption) -> Unit,
+    onSelect: (Selection) -> Unit,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -208,9 +218,9 @@ fun HomeScreen(
             state.media?.let { media ->
                 MediaCard(
                     media = media,
-                    selectedOption = state.selectedOption,
+                    selection = state.selection,
                     enabled = !state.isDownloading,
-                    onOptionSelected = onOptionSelected,
+                    onSelect = onSelect,
                 )
             }
 
@@ -393,9 +403,9 @@ private fun UrlInputCard(
 @Composable
 private fun MediaCard(
     media: ResolvedMedia,
-    selectedOption: MediaOption?,
+    selection: Selection?,
     enabled: Boolean,
-    onOptionSelected: (MediaOption) -> Unit,
+    onSelect: (Selection) -> Unit,
 ) {
     Card(shape = CardShape) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -443,39 +453,9 @@ private fun MediaCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            // Chips wrap rather than overflowing off-screen when a post offers several
-            // slides, or a source several renditions.
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                media.options.forEach { option ->
-                    FilterChip(
-                        selected = option == selectedOption,
-                        onClick = { onOptionSelected(option) },
-                        enabled = enabled,
-                        shape = CircleShape,
-                        colors = FilterChipDefaults.filterChipColors(),
-                        label = {
-                            Text(
-                                option.sizeBytes
-                                    ?.let { "${option.label} · ${it.toReadableSize()}" }
-                                    ?: option.label
-                            )
-                            if (media.kindOf(option).isVideo &&
-                                media.optionKind == OptionKind.ITEM
-                            ) {
-                                // A carousel mixes photos and videos; the chip says which
-                                // this one is, since the numbers alone cannot.
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_play_small),
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(start = 4.dp).size(14.dp),
-                                )
-                            }
-                        },
-                    )
-                }
+            when (media.optionKind) {
+                OptionKind.RENDITION -> RenditionChips(media, selection, enabled, onSelect)
+                OptionKind.ITEM -> ItemTiles(media, selection, enabled, onSelect)
             }
         }
     }
@@ -545,6 +525,141 @@ private fun Thumbnail(url: String?, dimmed: Boolean, showPlayBadge: Boolean) {
             }
         }
     }
+}
+
+/** Renditions of one video differ only by number, so a chip each is enough. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RenditionChips(
+    media: ResolvedMedia,
+    selection: Selection?,
+    enabled: Boolean,
+    onSelect: (Selection) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        media.options.forEach { option ->
+            FilterChip(
+                selected = (selection as? Selection.One)?.option == option,
+                onClick = { onSelect(Selection.One(option)) },
+                enabled = enabled,
+                shape = CircleShape,
+                colors = FilterChipDefaults.filterChipColors(),
+                label = {
+                    Text(
+                        option.sizeBytes
+                            ?.let { "${option.label} · ${it.toReadableSize()}" }
+                            ?: option.label
+                    )
+                },
+            )
+        }
+    }
+}
+
+/**
+ * A carousel's slides, as the pictures they are.
+ *
+ * Numbered chips told the user nothing about what they were choosing between — these are
+ * different photos, not sizes of one. The tiles scroll horizontally so a long post does
+ * not push the download button off the screen, and the last tile takes the whole post at
+ * once, which is what someone saving a carousel usually wants.
+ */
+@Composable
+private fun ItemTiles(
+    media: ResolvedMedia,
+    selection: Selection?,
+    enabled: Boolean,
+    onSelect: (Selection) -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(media.options, key = { it.url }) { option ->
+            ItemTile(
+                selected = (selection as? Selection.One)?.option == option,
+                enabled = enabled,
+                onClick = { onSelect(Selection.One(option)) },
+            ) {
+                AsyncImage(
+                    model = option.thumbnailUrl ?: media.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                if (media.kindOf(option).isVideo) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_play_small),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(26.dp),
+                    )
+                }
+                Text(
+                    text = option.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(4.dp)
+                        .background(ScrimColor, CircleShape)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+
+        item(key = "all") {
+            ItemTile(
+                selected = selection is Selection.All,
+                enabled = enabled,
+                onClick = { onSelect(Selection.All) },
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.action_save_all),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One square in the picker: the selected one is ringed rather than merely tinted. */
+@Composable
+private fun ItemTile(
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val border = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+
+    Box(
+        modifier = Modifier
+            .size(84.dp)
+            .clip(TileShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(if (selected) 3.dp else 1.dp, border, TileShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        content = content,
+    )
 }
 
 // ---------------------------------------------------------------------- progress
@@ -640,7 +755,17 @@ private fun CompletedContent(result: DownloadProgress.Completed, onDismiss: () -
             Spacer(Modifier.size(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.label_download_complete),
+                    // A batch says how many landed; one file names itself below, so
+                    // "1 item saved" would only repeat what is already on screen.
+                    text = if (result.savedCount > 1) {
+                        pluralStringResource(
+                            R.plurals.saved_count,
+                            result.savedCount,
+                            result.savedCount,
+                        )
+                    } else {
+                        stringResource(R.string.label_download_complete)
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
