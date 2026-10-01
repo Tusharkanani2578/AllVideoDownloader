@@ -16,7 +16,7 @@ import com.tushar.videodownloader.ServiceLocator
 import com.tushar.videodownloader.core.DownloadError
 import com.tushar.videodownloader.core.toReadableSize
 import com.tushar.videodownloader.resolver.ResolvedMedia
-import com.tushar.videodownloader.resolver.VideoQuality
+import com.tushar.videodownloader.resolver.MediaOption
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -61,8 +61,8 @@ class DownloadService : Service() {
         if (downloadJob?.isActive == true) return
 
         val media = pendingMedia
-        val quality = pendingQuality
-        if (media == null || quality == null) {
+        val option = pendingQuality
+        if (media == null || option == null) {
             stopSelf()
             return
         }
@@ -71,7 +71,7 @@ class DownloadService : Service() {
 
         downloadJob = serviceScope.launch {
             ServiceLocator.downloader(applicationContext)
-                .download(media, quality)
+                .download(media, option)
                 .collect { update ->
                     _progress.value = update
                     when (update) {
@@ -162,11 +162,11 @@ class DownloadService : Service() {
         // Handed over in memory: the service is process-local and ResolvedMedia is a
         // rich model, so Intent-extra serialisation buys nothing.
         private var pendingMedia: ResolvedMedia? = null
-        private var pendingQuality: VideoQuality? = null
+        private var pendingQuality: MediaOption? = null
 
-        fun start(context: Context, media: ResolvedMedia, quality: VideoQuality) {
+        fun start(context: Context, media: ResolvedMedia, option: MediaOption) {
             pendingMedia = media
-            pendingQuality = quality
+            pendingQuality = option
             _progress.value = DownloadProgress.Preparing
 
             val intent = Intent(context, DownloadService::class.java).setAction(ACTION_START)

@@ -76,8 +76,9 @@ import com.tushar.videodownloader.core.toReadableSpeed
 import com.tushar.videodownloader.download.DownloadProgress
 import com.tushar.videodownloader.resolver.MediaKind
 import com.tushar.videodownloader.resolver.MediaPreview
+import com.tushar.videodownloader.resolver.OptionKind
 import com.tushar.videodownloader.resolver.ResolvedMedia
-import com.tushar.videodownloader.resolver.VideoQuality
+import com.tushar.videodownloader.resolver.MediaOption
 
 private val CardShape = RoundedCornerShape(20.dp)
 
@@ -91,7 +92,7 @@ private val CardShape = RoundedCornerShape(20.dp)
 private val ContentMaxWidth = 560.dp
 
 /**
- * The single screen of the app: paste a link, pick a quality, download.
+ * The single screen of the app: paste a link, pick what to save, download.
  *
  * Stateless — it renders [state] and reports intent upward, so it can be previewed and
  * tested without a ViewModel.
@@ -104,7 +105,7 @@ fun HomeScreen(
     onFetch: () -> Unit,
     onPasteAndFetch: (String?) -> Unit,
     onUseClipboardSuggestion: () -> Unit,
-    onQualitySelected: (VideoQuality) -> Unit,
+    onOptionSelected: (MediaOption) -> Unit,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -207,9 +208,9 @@ fun HomeScreen(
             state.media?.let { media ->
                 MediaCard(
                     media = media,
-                    selectedQuality = state.selectedQuality,
+                    selectedOption = state.selectedOption,
                     enabled = !state.isDownloading,
-                    onQualitySelected = onQualitySelected,
+                    onOptionSelected = onOptionSelected,
                 )
             }
 
@@ -392,16 +393,16 @@ private fun UrlInputCard(
 @Composable
 private fun MediaCard(
     media: ResolvedMedia,
-    selectedQuality: VideoQuality?,
+    selectedOption: MediaOption?,
     enabled: Boolean,
-    onQualitySelected: (VideoQuality) -> Unit,
+    onOptionSelected: (MediaOption) -> Unit,
 ) {
     Card(shape = CardShape) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Thumbnail(
                 url = media.thumbnailUrl,
                 dimmed = false,
-                showPlayBadge = media.kind == MediaKind.VIDEO,
+                showPlayBadge = media.kindOf(media.defaultOption).isVideo,
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -409,9 +410,12 @@ private fun MediaCard(
                 Spacer(Modifier.size(8.dp))
                 Text(
                     text = pluralStringResource(
-                        R.plurals.quality_count,
-                        media.qualities.size,
-                        media.qualities.size,
+                        when (media.optionKind) {
+                            OptionKind.RENDITION -> R.plurals.quality_count
+                            OptionKind.ITEM -> R.plurals.item_count
+                        },
+                        media.options.size,
+                        media.options.size,
                     ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -427,30 +431,48 @@ private fun MediaCard(
             )
 
             Text(
-                text = stringResource(R.string.label_select_quality),
+                text = stringResource(
+                    when (media.optionKind) {
+                        // "Select quality" would be a lie for a carousel: the entries are
+                        // different pictures, not the same one at different sizes.
+                        OptionKind.RENDITION -> R.string.label_select_quality
+                        OptionKind.ITEM -> R.string.label_select_item
+                    }
+                ),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            // Chips wrap rather than overflowing off-screen when a source offers
-            // several renditions.
+            // Chips wrap rather than overflowing off-screen when a post offers several
+            // slides, or a source several renditions.
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                media.qualities.forEach { quality ->
+                media.options.forEach { option ->
                     FilterChip(
-                        selected = quality == selectedQuality,
-                        onClick = { onQualitySelected(quality) },
+                        selected = option == selectedOption,
+                        onClick = { onOptionSelected(option) },
                         enabled = enabled,
                         shape = CircleShape,
                         colors = FilterChipDefaults.filterChipColors(),
                         label = {
                             Text(
-                                quality.sizeBytes
-                                    ?.let { "${quality.label} · ${it.toReadableSize()}" }
-                                    ?: quality.label
+                                option.sizeBytes
+                                    ?.let { "${option.label} · ${it.toReadableSize()}" }
+                                    ?: option.label
                             )
+                            if (media.kindOf(option).isVideo &&
+                                media.optionKind == OptionKind.ITEM
+                            ) {
+                                // A carousel mixes photos and videos; the chip says which
+                                // this one is, since the numbers alone cannot.
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_play_small),
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(start = 4.dp).size(14.dp),
+                                )
+                            }
                         },
                     )
                 }

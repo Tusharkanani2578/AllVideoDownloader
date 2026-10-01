@@ -88,11 +88,11 @@ class MediaStoreSaver(private val context: Context) {
 
     private fun MediaKind.collectionUri(): Uri = when (this) {
         MediaKind.VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        MediaKind.IMAGE -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        MediaKind.IMAGE, MediaKind.IMAGE_WEBP -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
     }
 
     private fun MediaKind.publicDirectory(): String = when (this) {
         MediaKind.VIDEO -> Environment.DIRECTORY_MOVIES
-        MediaKind.IMAGE -> Environment.DIRECTORY_PICTURES
+        MediaKind.IMAGE, MediaKind.IMAGE_WEBP -> Environment.DIRECTORY_PICTURES
     }
 }

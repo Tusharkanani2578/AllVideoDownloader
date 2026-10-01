@@ -10,7 +10,7 @@ import com.tushar.videodownloader.core.ValidationException
 import com.tushar.videodownloader.download.DownloadProgress
 import com.tushar.videodownloader.download.DownloadService
 import com.tushar.videodownloader.resolver.ResolveException
-import com.tushar.videodownloader.resolver.VideoQuality
+import com.tushar.videodownloader.resolver.MediaOption
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -128,7 +128,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             stage = HomeUiState.Stage.Resolved,
                             media = media,
                             preview = null,
-                            selectedQuality = media.bestQuality,
+                            selectedOption = media.defaultOption,
                             error = null,
                         )
                     }
@@ -191,16 +191,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         onFetchClicked()
     }
 
-    fun onQualitySelected(quality: VideoQuality) {
-        _uiState.update { it.copy(selectedQuality = quality, error = null) }
+    fun onOptionSelected(option: MediaOption) {
+        _uiState.update { it.copy(selectedOption = option, error = null) }
     }
 
     fun onDownloadClicked() {
         val state = _uiState.value
         val media = state.media ?: return
-        val quality = state.selectedQuality ?: return
+        val option = state.selectedOption ?: return
 
-        DownloadService.start(getApplication(), media, quality)
+        DownloadService.start(getApplication(), media, option)
     }
 
     fun onCancelClicked() {
@@ -215,7 +215,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 stage = HomeUiState.Stage.Idle,
                 media = null,
                 preview = null,
-                selectedQuality = null,
+                selectedOption = null,
                 download = null,
                 error = null,
                 clipboardSuggestion = null,

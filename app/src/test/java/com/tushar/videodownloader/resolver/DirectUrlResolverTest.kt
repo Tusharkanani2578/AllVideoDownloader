@@ -58,7 +58,7 @@ class DirectUrlResolverTest {
         val media = resolver.resolve(url("/clip.mp4")).getOrThrow()
 
         assertEquals("clip.mp4", media.title)
-        assertEquals(2048L, media.qualities.single().sizeBytes)
+        assertEquals(2048L, media.options.single().sizeBytes)
         assertEquals(Platform.DIRECT_LINK, media.platform)
         assertEquals("HEAD", server.takeRequest().method)
     }
@@ -99,7 +99,7 @@ class DirectUrlResolverTest {
 
         val media = resolver.resolve(url("/clip.mp4")).getOrThrow()
 
-        assertEquals(1, media.qualities.size)
+        assertEquals(1, media.options.size)
     }
 
     @Test
@@ -112,7 +112,7 @@ class DirectUrlResolverTest {
 
         val media = resolver.resolve(url("/clip.mp4")).getOrThrow()
 
-        assertEquals(null, media.qualities.single().sizeBytes)
+        assertEquals(null, media.options.single().sizeBytes)
     }
 
     @Test

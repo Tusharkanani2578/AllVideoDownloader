@@ -56,8 +56,8 @@ class FacebookResolver(
 
             val html = fetchHtml(embedUrl) ?: return@withContext null
 
-            val qualities = FacebookEmbedParser.findQualities(html)
-            if (qualities.isEmpty()) return@withContext null
+            val options = FacebookEmbedParser.findQualities(html)
+            if (options.isEmpty()) return@withContext null
 
             ResolvedMedia(
                 sourceUrl = url.toString(),
@@ -67,7 +67,7 @@ class FacebookResolver(
                 // tag is served even where the video itself is gated.
                 thumbnailUrl = FacebookEmbedParser.findThumbnailUrl(html)
                     ?: findOpenGraphImage(canonical),
-                qualities = qualities,
+                options = options,
                 platform = platform,
             )
         }
@@ -100,7 +100,7 @@ class FacebookResolver(
                 sourceUrl = url.toString(),
                 title = "Facebook photo",
                 thumbnailUrl = imageUrl,
-                qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
+                options = listOf(MediaOption(label = "Original", url = imageUrl)),
                 platform = platform,
                 kind = MediaKind.IMAGE,
             )

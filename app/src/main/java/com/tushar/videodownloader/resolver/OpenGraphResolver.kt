@@ -84,7 +84,7 @@ abstract class OpenGraphResolver(
                         sourceUrl = url.toString(),
                         title = title ?: "${platform.displayName} video",
                         thumbnailUrl = thumbnail,
-                        qualities = buildQualities(html, videoUrl),
+                        options = buildQualities(html, videoUrl),
                         platform = platform,
                     )
                 )
@@ -95,9 +95,9 @@ abstract class OpenGraphResolver(
     }
 
     /** OG advertises one rendition; label it by its real height, don't invent options. */
-    protected open fun buildQualities(html: String, videoUrl: String): List<VideoQuality> {
+    protected open fun buildQualities(html: String, videoUrl: String): List<MediaOption> {
         val height = OpenGraphParser.findContent(html, "og:video:height")?.toIntOrNull() ?: 0
         val label = if (height > 0) "${height}p" else "Original"
-        return listOf(VideoQuality(label = label, url = videoUrl, heightPx = height))
+        return listOf(MediaOption(label = label, url = videoUrl, heightPx = height))
     }
 }

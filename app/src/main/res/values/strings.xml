@@ -3,6 +3,10 @@
     <string name="app_name">All Video Downloader</string>
     <string name="app_tagline">Paste a link, save the video</string>
     <string name="clipboard_detected">Link found on your clipboard</string>
+    <plurals name="item_count">
+        <item quantity="one">%1$d item in this post</item>
+        <item quantity="other">%1$d items in this post</item>
+    </plurals>
     <plurals name="quality_count">
         <item quantity="one">%1$d quality available</item>
         <item quantity="other">%1$d qualities available</item>
@@ -11,6 +15,7 @@
     <string name="label_paste_url">Video URL</string>
     <string name="placeholder_url">https://www.instagram.com/reel/…</string>
     <string name="label_select_quality">Select quality</string>
+    <string name="label_select_item">Select what to save</string>
     <string name="label_downloading">Downloading</string>
     <string name="label_preparing">Preparing…</string>
     <string name="label_download_complete">Download complete</string>

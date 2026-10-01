@@ -57,8 +57,8 @@ class DirectUrlResolver(
                         sourceUrl = url.toString(),
                         title = fileName,
                         thumbnailUrl = null,
-                        qualities = listOf(
-                            VideoQuality(label = "Original", url = url.toString(), sizeBytes = size)
+                        options = listOf(
+                            MediaOption(label = "Original", url = url.toString(), sizeBytes = size)
                         ),
                         platform = if (url.host in whatsappHosts) Platform.WHATSAPP else Platform.DIRECT_LINK,
                     )

@@ -1,11 +1,11 @@
 package com.tushar.videodownloader.download
 
 import com.tushar.videodownloader.resolver.ResolvedMedia
-import com.tushar.videodownloader.resolver.VideoQuality
+import com.tushar.videodownloader.resolver.MediaOption
 import kotlin.math.absoluteValue
 
 /**
- * Builds gallery file names. Deterministic per (source URL, quality) — that is what
+ * Builds gallery file names. Deterministic per (source URL, option) — that is what
  * makes duplicate detection a MediaStore query instead of a re-download.
  */
 internal object FileNaming {
@@ -16,7 +16,7 @@ internal object FileNaming {
 
     private val MEDIA_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "m4v", "3gp")
 
-    fun buildFileName(media: ResolvedMedia, quality: VideoQuality): String {
+    fun buildFileName(media: ResolvedMedia, option: MediaOption): String {
         // A direct link's title is its file name; strip its extension so it doesn't
         // survive as junk mid-name ("clipmp4").
         val titleWithoutExtension = media.title
@@ -34,7 +34,7 @@ internal object FileNaming {
         // Source-URL hash keeps identical titles from different posts apart.
         val sourceHash = media.sourceUrl.hashCode().absoluteValue.toString(36)
 
-        return "${media.platform.name.lowercase()}_${safeTitle}_${quality.label}_$sourceHash" +
-            ".${media.kind.fileExtension}"
+        return "${media.platform.name.lowercase()}_${safeTitle}_${option.label}_$sourceHash" +
+            ".${media.kindOf(option).fileExtension}"
     }
 }

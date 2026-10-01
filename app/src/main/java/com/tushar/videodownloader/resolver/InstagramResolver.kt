@@ -93,20 +93,60 @@ class InstagramResolver(
                 return@withContext null
             }
 
-            val videoUrl = InstagramPageParser.findVideoUrl(html) ?: return@withContext null
             val username = InstagramPageParser.findUsername(html)
+            val cover = InstagramPageParser.findImageUrl(html)
+
+            // A carousel is checked first: its page also carries an og:image, so looking
+            // for a single piece of media would resolve the cover and quietly save that
+            // instead of the slides the user came for.
+            carousel(url, html, username, cover)?.let { return@withContext Result.success(it) }
+
+            val videoUrl = InstagramPageParser.findVideoUrl(html) ?: return@withContext null
 
             Result.success(
                 ResolvedMedia(
                     sourceUrl = url.toString(),
                     title = username?.let { "$it — Instagram video" } ?: "Instagram video",
-                    thumbnailUrl = InstagramPageParser.findImageUrl(html),
-                    qualities = listOf(VideoQuality(label = "Original", url = videoUrl)),
+                    thumbnailUrl = cover,
+                    options = listOf(MediaOption(label = "Original", url = videoUrl)),
                     platform = platform,
                     kind = MediaKind.VIDEO,
                 )
             )
         }
+
+    /**
+     * A carousel post, as one entry per slide.
+     *
+     * The link names the slide its sender was looking at in `img_index`, counting from
+     * one, so that is the slide the screen opens on. The rest stay a tap away rather than
+     * being lost, since a carousel is several separate things to save, not several
+     * renditions of one.
+     */
+    private fun carousel(
+        url: HttpUrl,
+        html: String,
+        username: String?,
+        cover: String?,
+    ): ResolvedMedia? {
+        val items = InstagramPageParser.findCarouselItems(html)
+        if (items.size < 2) return null
+
+        val shared = url.queryParameter("img_index")?.toIntOrNull()?.minus(1)
+
+        return ResolvedMedia(
+            sourceUrl = url.toString(),
+            title = username?.let { "$it — Instagram post" } ?: "Instagram post",
+            thumbnailUrl = cover,
+            options = items,
+            platform = platform,
+            // The post's own kind only covers slides that do not state one; every slide
+            // this parser produces does.
+            kind = MediaKind.IMAGE_WEBP,
+            optionKind = OptionKind.ITEM,
+            preferredIndex = shared?.takeIf { it in items.indices } ?: 0,
+        )
+    }
 
     /**
      * Resolves through the public embed page.
@@ -147,7 +187,7 @@ class InstagramResolver(
                         sourceUrl = url.toString(),
                         title = username?.let { "$it — Instagram video" } ?: "Instagram video",
                         thumbnailUrl = InstagramEmbedParser.findThumbnailUrl(html),
-                        qualities = listOf(VideoQuality(label = "Original", url = videoUrl)),
+                        options = listOf(MediaOption(label = "Original", url = videoUrl)),
                         platform = platform,
                         kind = MediaKind.VIDEO,
                     )
@@ -170,7 +210,7 @@ class InstagramResolver(
                     sourceUrl = url.toString(),
                     title = username?.let { "$it — Instagram photo" } ?: "Instagram photo",
                     thumbnailUrl = imageUrl,
-                    qualities = listOf(VideoQuality(label = "Original", url = imageUrl)),
+                    options = listOf(MediaOption(label = "Original", url = imageUrl)),
                     platform = platform,
                     kind = MediaKind.IMAGE,
                 )

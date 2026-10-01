@@ -16,12 +16,12 @@ class FacebookEmbedParserTest {
 
     @Test
     fun `extracts both renditions with hd first`() {
-        val qualities = FacebookEmbedParser.findQualities(embedHtml)
+        val options = FacebookEmbedParser.findQualities(embedHtml)
 
-        assertEquals(2, qualities.size)
-        assertEquals("HD", qualities[0].label)
-        assertEquals("SD", qualities[1].label)
-        assertTrue(qualities[0].heightPx > qualities[1].heightPx)
+        assertEquals(2, options.size)
+        assertEquals("HD", options[0].label)
+        assertEquals("SD", options[1].label)
+        assertTrue(options[0].heightPx > options[1].heightPx)
     }
 
     @Test
@@ -43,10 +43,10 @@ class FacebookEmbedParserTest {
     fun `returns only sd when no hd rendition exists`() {
         val sdOnly = """{"sd_src":"https://cdn.example.com/sd.mp4"}"""
 
-        val qualities = FacebookEmbedParser.findQualities(sdOnly)
+        val options = FacebookEmbedParser.findQualities(sdOnly)
 
-        assertEquals(1, qualities.size)
-        assertEquals("SD", qualities[0].label)
+        assertEquals(1, options.size)
+        assertEquals("SD", options[0].label)
     }
 
     @Test

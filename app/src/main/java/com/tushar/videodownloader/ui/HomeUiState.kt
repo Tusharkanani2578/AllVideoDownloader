@@ -4,7 +4,7 @@ import com.tushar.videodownloader.core.DownloadError
 import com.tushar.videodownloader.download.DownloadProgress
 import com.tushar.videodownloader.resolver.MediaPreview
 import com.tushar.videodownloader.resolver.ResolvedMedia
-import com.tushar.videodownloader.resolver.VideoQuality
+import com.tushar.videodownloader.resolver.MediaOption
 
 /**
  * Everything the home screen renders, in one immutable snapshot — so the UI can never
@@ -16,7 +16,7 @@ data class HomeUiState(
     val media: ResolvedMedia? = null,
     /** Metadata for a link that resolved but has no downloadable video. */
     val preview: MediaPreview? = null,
-    val selectedQuality: VideoQuality? = null,
+    val selectedOption: MediaOption? = null,
     val download: DownloadProgress? = null,
     val error: DownloadError? = null,
     val clipboardSuggestion: String? = null,

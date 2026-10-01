@@ -5,7 +5,7 @@ import com.tushar.videodownloader.network.HttpClientProvider
 import com.tushar.videodownloader.network.NetworkMonitor
 import com.tushar.videodownloader.resolver.MediaKind
 import com.tushar.videodownloader.resolver.ResolvedMedia
-import com.tushar.videodownloader.resolver.VideoQuality
+import com.tushar.videodownloader.resolver.MediaOption
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -44,7 +44,7 @@ class Downloader(
      * Emits progress until completion or failure. Cancelling the collecting scope
      * stops the transfer; the partial file is kept so a later attempt can resume.
      */
-    fun download(media: ResolvedMedia, quality: VideoQuality): Flow<DownloadProgress> = flow {
+    fun download(media: ResolvedMedia, option: MediaOption): Flow<DownloadProgress> = flow {
         emit(DownloadProgress.Preparing)
 
         if (!networkMonitor.isOnline()) {
@@ -53,7 +53,7 @@ class Downloader(
         }
 
         try {
-            transfer(media, quality)
+            transfer(media, option)
         } catch (e: CancellationException) {
             throw e
         } catch (e: SocketTimeoutException) {
@@ -61,7 +61,7 @@ class Downloader(
         } catch (e: InterruptedIOException) {
             emit(DownloadProgress.Failed(DownloadError.Interrupted(0)))
         } catch (e: IOException) {
-            emit(DownloadProgress.Failed(e.toDownloadError(quality.sizeBytes)))
+            emit(DownloadProgress.Failed(e.toDownloadError(option.sizeBytes)))
         } catch (e: Exception) {
             emit(DownloadProgress.Failed(DownloadError.Unexpected(e)))
         }
@@ -69,17 +69,21 @@ class Downloader(
 
     private suspend fun FlowCollector<DownloadProgress>.transfer(
         media: ResolvedMedia,
-        quality: VideoQuality,
+        option: MediaOption,
     ) {
-        val fileName = FileNaming.buildFileName(media, quality)
-        if (rejectIfAlreadySaved(fileName, media.kind)) return
-        if (rejectIfNoRoom(quality.sizeBytes)) return
+        // A carousel's slides are not all the same kind, so the chosen option decides
+        // what this file is saved as, not the post it came from.
+        val kind = media.kindOf(option)
+
+        val fileName = FileNaming.buildFileName(media, option)
+        if (rejectIfAlreadySaved(fileName, kind)) return
+        if (rejectIfNoRoom(option.sizeBytes)) return
 
         val tempFile = File(tempDir, "$fileName.part")
         val alreadyHave = if (tempFile.exists()) tempFile.length() else 0L
 
         val request = Request.Builder()
-            .url(quality.url)
+            .url(option.url)
             .header("User-Agent", HttpClientProvider.USER_AGENT)
             .apply { if (alreadyHave > 0) header("Range", "bytes=$alreadyHave-") }
             .get()
@@ -119,8 +123,8 @@ class Downloader(
                 return
             }
 
-            val uri = mediaStoreSaver.publish(tempFile, fileName, media.kind)
-            emit(DownloadProgress.Completed(fileName, uri.toString(), media.kind))
+            val uri = mediaStoreSaver.publish(tempFile, fileName, kind)
+            emit(DownloadProgress.Completed(fileName, uri.toString(), kind))
         }
     }
 
@@ -202,7 +206,7 @@ class Downloader(
             DownloadError.Interrupted(0)
         }
 
-    fun discardPartial(media: ResolvedMedia, quality: VideoQuality) {
-        File(tempDir, "${FileNaming.buildFileName(media, quality)}.part").delete()
+    fun discardPartial(media: ResolvedMedia, option: MediaOption) {
+        File(tempDir, "${FileNaming.buildFileName(media, option)}.part").delete()
     }
 }

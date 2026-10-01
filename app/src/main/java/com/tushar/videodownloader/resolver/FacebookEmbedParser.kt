@@ -21,12 +21,12 @@ internal object FacebookEmbedParser {
      * than resolution, so the heights are nominal — enough to order the chips and pick
      * a sensible default.
      */
-    fun findQualities(embedHtml: String): List<VideoQuality> = buildList {
+    fun findQualities(embedHtml: String): List<MediaOption> = buildList {
         HD_SRC.find(embedHtml)?.groupValues?.get(1)?.let {
-            add(VideoQuality(label = "HD", url = unescape(it), heightPx = 720))
+            add(MediaOption(label = "HD", url = unescape(it), heightPx = 720))
         }
         SD_SRC.find(embedHtml)?.groupValues?.get(1)?.let {
-            add(VideoQuality(label = "SD", url = unescape(it), heightPx = 360))
+            add(MediaOption(label = "SD", url = unescape(it), heightPx = 360))
         }
     }
 

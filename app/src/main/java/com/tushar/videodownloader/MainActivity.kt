@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
                             onFetch = viewModel::onFetchClicked,
                             onPasteAndFetch = viewModel::onPasteAndFetch,
                             onUseClipboardSuggestion = viewModel::onUseClipboardSuggestion,
-                            onQualitySelected = viewModel::onQualitySelected,
+                            onOptionSelected = viewModel::onOptionSelected,
                             onDownload = viewModel::onDownloadClicked,
                             onCancel = viewModel::onCancelClicked,
                             onRetry = viewModel::onRetry,
